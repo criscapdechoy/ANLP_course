@@ -61,6 +61,8 @@ if __name__ == "__main__":
     else:
         inputdir = "data/Devel/"
     # Assign output file for entities
-    outputfile = ""
+    if not os.path.exists("data/tmp"):
+        os.makedirs("data/tmp")
+    outputfile = "tmp/baseline-NER-entities.dat"
     # Run NERC
-    nerc(inputdir, outputfile)
+    # nerc(inputdir, outputfile)
