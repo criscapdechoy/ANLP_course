@@ -8,6 +8,9 @@ papers/
 # Ignore resources folder
 resources/
 
+# Ignore virtual environment folder
+anlp/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
