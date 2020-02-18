@@ -5,6 +5,9 @@ from nltk import tokenize
 import os
 import sys
 import xml.dom.minidom
+# Global variables to control script flow
+input_default_path = "data/Devel/"
+tmp_path = "data/tmp"
 
 def parseXML(file):
     """
@@ -59,10 +62,11 @@ if __name__ == "__main__":
     if len(sys.argv)>0:
         inputdir = sys.argv[0]
     else:
-        inputdir = "data/Devel/"
+        inputdir = input_default_path
     # Assign output file for entities
-    if not os.path.exists("data/tmp"):
-        os.makedirs("data/tmp")
-    outputfile = "tmp/baseline-NER-entities.dat"
+    if not os.path.exists(tmp_path):
+        os.makedirs(tmp_path)
+        print(f"[INFO] Created a new folder {tmp_path}")
+    outputfile = f"{tmp_path}/baseline-NER-entities.dat"
     # Run NERC
-    # nerc(inputdir, outputfile)
+    nerc(inputdir, outputfile)
