@@ -1,7 +1,7 @@
 """
 """
 # !/usr/bin/python3
-from nltk.tokenize import WhitespaceTokenizer
+from nltk.tokenize import StanfordTokenizer as Tokenizer
 from xml.dom.minidom import parse
 from glob import glob
 import os
@@ -50,23 +50,33 @@ def tokenize(s):
     Returns:
         - tokens: list of tuples (token, start-index, end-index)
     """
-    tokenizer = WhitespaceTokenizer()
+    tokenizer = Tokenizer()
     spans = tokenizer.span_tokenize(s)
     tokens = tokenizer.tokenize(s)
     tokens = [(t, s[0], s[1]) for t, s in zip(tokens, spans)]
     return tokens
 
 
-def extract_entities(s):
+def extract_entities(token_list):
     """
     """
-    # TODO: implement
+    ents = []
+    for i, token_t in enumerate(token_list):
+        token, start, end = token_t
+        # Rules to detect if token is entity
+        isEnt = True
+        if isEnt:
+            # Rules to detect type of entity
+            type = "drug"
+            ent = {"name": token, "offset": f"{start}-{end}", "type": type}
+            ents.append(ent)
+    return ents
 
 
 def output_entities(id, ents, outf):
     """
     """
-    # TODO: implement
+    # with open(f"data/tmp/{outf}", "w") as fp:
 
 
 def evaluate(inputdir, outputfile):
