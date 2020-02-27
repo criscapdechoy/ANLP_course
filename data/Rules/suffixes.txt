@@ -1,5 +1,4 @@
 abine
-ac
 acetam
 acid
 actide
@@ -7,7 +6,6 @@ adol
 adox
 afenone
 afil
-aj
 aldol
 aldrate
 algron
@@ -88,7 +86,6 @@ cillin
 citabine
 clidine
 clone
-co
 cog
 cogin
 conazole
@@ -166,7 +163,6 @@ filcon
 fingol
 flapon
 flurane
-fo
 focon
 formin
 fradil
@@ -207,7 +203,6 @@ imibe
 imod
 imus
 inostat
-io
 irudin
 isant
 isomide

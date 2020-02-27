@@ -53,16 +53,25 @@ def tokenize(s):
     tokenizer = Tokenizer()
     spans = tokenizer.span_tokenize(text)
     tokens = tokenizer.tokenize(text)
-    tokens = [(t, s[0], s[1]) for t, s in zip(tokens, spans)]
+    tokens = [(t, s[0], s[1]-1) for t, s in zip(tokens, spans)]
     return tokens
 
 
 def extract_entities(token_list):
     """
+    Extract entitites
+    Fuction to extract and tag the entites of the give token lists, taggin each
+    foun entity with a type given a set of rules.
+    Args:
+        - token_list: list of token strings with token words
+    Returns:
+        - ents: list of dictionaries with entities' name, type and offset.
     """
-    # Common drug suffixes
-    with open("data/Rules/sufixes.txt", "r") as fp:
+    # Common drug terms
+    with open("data/Rules/suffixes.txt", "r") as fp:
         terms = [s.replace("\n", "") for s in fp.readlines()]
+    with open("data/Rules/plural_sufixes.txt", "r") as fp:
+        plural_suffixes = [s.replace("\n", "") for s in fp.readlines()]
     ents = []
     for i, token_t in enumerate(token_list):
         token, start, end = token_t
@@ -75,7 +84,12 @@ def extract_entities(token_list):
         for term in terms:
             # If common term in token, probably drug
             if term in token:
-                type = "drug"
+                # Drugs with plural names tend to be groups
+                # thus, we look for plurals
+                if token.endswith(tuple(plural_suffixes)):
+                    type = "group"
+                else:
+                    type = "drug"
                 break
         if type is not None:
             ent = {"name": token, "offset": f"{start}-{end}", "type": type}
