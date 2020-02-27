@@ -11,6 +11,10 @@ resources/
 # Ignore virtual environment folder
 anlp/
 
+# Ignore IDE config folders
+.vscode
+.idea
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
