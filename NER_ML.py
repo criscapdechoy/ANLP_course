@@ -119,7 +119,25 @@ def extract_features(token_list):
             nxt = "next=_EoS_"
         else:
             nxt = f"next={token_list[i+1][0]}"
-        features.append([form, suf4, nxt, prev])
+        # Begin with capital letter
+        if token[0].isupper():
+            b_capital = "TRUE"
+        else:
+            b_capital = "FALSE"
+        # All token in capital letters
+        capital = str(token.isupper())
+        # Token contains a digit
+        digit = str(any(i.isdigit() for i in token))
+        # Token contains a hyphen
+        hyphen = str("-" in token)
+        hyphen = str("True")
+
+        # Token contains a ()
+        paren = str(any(["(" in token, "(" in token]))
+        # Token contains a ()
+        sign = str(any(["+" in token, "-" in token]) & ("(" in token))
+
+        features.append([form, suf4, nxt, prev, b_capital, capital, digit, hyphen, paren, sign])
     return features
 
 
