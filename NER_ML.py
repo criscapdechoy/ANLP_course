@@ -249,9 +249,9 @@ if __name__ == "__main__":
     # Evaluation output file config
     outputfile = f"{tmp_path}/task9.1_ML_1.txt"
     # Run train_features
-    # build_features(train_input_fn, train_features_fn)
+    build_features(train_input_fn, train_features_fn)
     # Train model
-    # learner(model, train_features_fn, ml_model_fn)
+    learner(model, train_features_fn, ml_model_fn)
     # Run validation features
     build_features(valid_input_fn, valid_features_fn)
     # Predict validation
