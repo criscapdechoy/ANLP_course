@@ -13,7 +13,7 @@ LABELS = ["B-drug", "I-drug", "B-drug_n", "I-drug_n", "B-brand", "I-brand",
           "B-group", "I-group", "O"]
 # Global variables to control script flow
 tmp_path = "data/tmp"
-model = "MaxEnt"
+model = "CRF"
 # Assign output file for entities
 if not path_exists(tmp_path):
     makedirs(tmp_path)
