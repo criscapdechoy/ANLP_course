@@ -2,7 +2,7 @@
 """
 # !/usr/bin/python3
 from nltk.tokenize.regexp import WhitespaceTokenizer as Tokenizer
-from re import sub as reg_sub, compile as reg_compile
+from re import sub as reg_sub
 from xml.dom.minidom import parse
 from os import makedirs, listdir, system
 from os.path import exists as path_exists
@@ -162,7 +162,8 @@ def build_features(inputdir, outputfile):
     """
     files = [f"{inputdir}/{f}" for f in listdir(inputdir)]
     output = open(outputfile, "w")
-    for file in files:
+    last = len(files) - 1
+    for i, file in enumerate(files):
         tree, entities = parseXML(file)
         gold_ents = get_gold_entities(entities)
         for i, sentence in enumerate(tree):
@@ -170,7 +171,8 @@ def build_features(inputdir, outputfile):
             token_list = tokenize(text)
             features = extract_features(token_list)
             output_features(id, token_list, features, gold_ents, output)
-            output.write("\n")
+            if len(token_list) > 0 and i < last:
+                output.write("\n")
     output.close()
     return "DONE!"
 
@@ -180,7 +182,7 @@ def get_sentence_features(input):
     """
     with open(input, "r") as fp:
         lines = fp.read()
-    sentences = lines.split("\n\n")
+    sentences = lines.split("\n\n")[:-1]
     X_feat = []
     Y_feat = []
     full_tokens = []
@@ -203,7 +205,7 @@ def output_entities(id, tokens, classes, outf):
             continue
         name, start, end = token
         offset = f"{start}-{end}"
-        type = tag.split("-")[0]
+        type = tag.split("-")[1]
         txt = f"{id}|{offset}|{name}|{type}\n"
         outf.write(txt)
 
@@ -238,7 +240,6 @@ def classifier(model, feature_input, model_input, outputfile):
     # Ouput entites for each sentence
     with open(outputfile, "w") as out:
         for sent, classes in zip(sentences, predictions):
-            print(sent, classes)
             id = sent[0][0]
             tokens = [(word[1], word[2], word[3]) for word in sent if word]
             output_entities(id, tokens, classes, out)
@@ -255,5 +256,5 @@ if __name__ == "__main__":
     build_features(valid_input_fn, valid_features_fn)
     # Predict validation
     classifier(model, valid_features_fn, ml_model_fn, outputfile)
-
-
+    # Evaluate prediciton
+    evaluate(valid_input_fn, outputfile)
