@@ -25,13 +25,14 @@ train_features_fn = f"{tmp_path}/ML_train_features.txt"
 valid_features_fn = f"{tmp_path}/ML_valid_features.txt"
 # Model path to save it
 ml_model_fn = f"{tmp_path}/ML_model"
+# Specify local megam file
+megam = "megam_i686.opt"
 
 
 def parseXML(file):
     """
     Parse XML file.
     Function to parse the XML file with path given as argument.
-
     Args:
         - file: string with path of xml file to parse.
     Returns:
@@ -84,7 +85,7 @@ def tokenize(s):
     Returns:
         - tokens: list of tuples (token, start-index, end-index)
     """
-    text = reg_sub(r"[(,.:;'\")]+", " ", s)
+    text = reg_sub(r"[,.:;'\"]+", " ", s)
     tokenizer = Tokenizer()
     spans = tokenizer.span_tokenize(text)
     tokens = tokenizer.tokenize(text)
@@ -120,24 +121,21 @@ def extract_features(token_list):
         else:
             nxt = f"next={token_list[i+1][0]}"
         # Begin with capital letter
-        if token[0].isupper():
-            b_capital = "TRUE"
-        else:
-            b_capital = "FALSE"
+        capital = "capital=Y" if token[0].isupper() else "capital=N"
         # All token in capital letters
-        capital = str(token.isupper())
+        upper = "upper=Y" if token.isupper() else "upper=N"
         # Token contains a digit
-        digit = str(any(i.isdigit() for i in token))
+        digit = "digit=Y" if any(i.isdigit() for i in token) else "digit=N"
         # Token contains a hyphen
-        hyphen = str("-" in token)
-        hyphen = str("True")
-
+        hyphen = "hypen=Y" if "-" in token else "hyphen=N"
         # Token contains a ()
-        paren = str(any(["(" in token, "(" in token]))
+        paren = "paren=Y" if any(["(" in token, "(" in token]) else "paren=N"
         # Token contains a ()
-        sign = str(any(["+" in token, "-" in token]) & ("(" in token))
+        sign = "sign=Y" if (any(["+" in token, "-" in token]) &
+                            ("(" in token)) else "sign=N"
 
-        features.append([form, suf4, nxt, prev, b_capital, capital, digit, hyphen, paren, sign])
+        features.append([form, suf4, nxt, prev, capital, upper, digit,
+                         hyphen, paren, sign])
     return features
 
 
@@ -164,7 +162,6 @@ def evaluate(inputdir, outputfile):
     Receives a data directory and the filename for the results to evaluate.
     Prints statistics about the predicted entities in the given output file.
     NOTE: outputfile must match the pattern: task9.1_NAME_NUMBER.txt
-
     Args:
         - inputdir: string with folder containing original XML.
         - outputfile: string with file name with the entities produced by your
@@ -238,7 +235,12 @@ def learner(model, feature_input, output_fn):
             trainer.append(xseq, yseq)
         trainer.train(f"{output_fn}.crfsuite")
     elif model == "MaxEnt":
-        pass
+        megam_features = f"{tmp_path}/megam_train_features.dat"
+        megam_model = f"{output_fn}.megam"
+        system(f"cat {feature_input} | cut -f5- | grep -v ’^$’ > \
+            {megam_features}")
+        system(f"./{megam} -quiet -nc -nobias multiclass \
+            {megam_features} > {megam_model}")
     else:
         print(f"[ERROR] Model {model} not implemented")
         raise NotImplementedError
@@ -251,7 +253,21 @@ def classifier(model, feature_input, model_input, outputfile):
         tagger.open(f"{model_input}.crfsuite")
         predictions = [tagger.tag(x) for x in X_valid]
     elif model == "MaxEnt":
-        pass
+        megam_features = f"{tmp_path}/megam_valid_features.dat"
+        megam_predictions = f"{tmp_path}/megam_predictions.dat"
+        system(f"cat {feature_input} | cut -f5- | grep -v ’^$’ > \
+            {megam_features}")
+        system(f"./{megam} -nc -nobias -predict {model_input}.megam multiclass\
+            {megam_features} > {megam_predictions}")
+        with open(megam_predictions, "r") as fp:
+            lines = fp.readlines()
+        pred_classes = [line.split("\t")[0] for line in lines]
+        predictions = []
+        start = 0
+        for sent in X_valid:
+            end = start + len(sent)
+            predictions.append(pred_classes[start:end])
+            start = end
     else:
         print(f"[ERROR] Model {model} not implemented")
         raise NotImplementedError
@@ -265,7 +281,7 @@ def classifier(model, feature_input, model_input, outputfile):
 
 if __name__ == "__main__":
     # Evaluation output file config
-    outputfile = f"{tmp_path}/task9.1_ML_1.txt"
+    outputfile = f"{tmp_path}/task9.1_ML_{model}_1.txt"
     # Run train_features
     build_features(train_input_fn, train_features_fn)
     # Train model
@@ -276,3 +292,4 @@ if __name__ == "__main__":
     classifier(model, valid_features_fn, ml_model_fn, outputfile)
     # Evaluate prediciton
     evaluate(valid_input_fn, outputfile)
+§
