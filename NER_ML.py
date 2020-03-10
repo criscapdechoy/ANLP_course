@@ -84,7 +84,7 @@ def tokenize(s):
     Returns:
         - tokens: list of tuples (token, start-index, end-index)
     """
-    text = reg_sub(r"[,.:();'\"]+", " ", s)
+    text = reg_sub(r"[,.:;'\"]+", " ", s)
     tokenizer = Tokenizer()
     spans = tokenizer.span_tokenize(text)
     tokens = tokenizer.tokenize(text)
@@ -130,8 +130,7 @@ def extract_features(token_list):
         # Token contains a hyphen
         hyphen = f"hyphen={'-' in token}"
         # Token contains a ()
-        # paren = f"paren={any(['(' in token, ')' in token])}"
-        paren = f"True"
+        paren = f"paren={any(['(' in token, ')' in token])}"
         # Token contains a ()
         sign = f"sign={any(['+' in token, '-' in token])}"
 
