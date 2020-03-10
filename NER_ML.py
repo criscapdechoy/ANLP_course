@@ -7,7 +7,6 @@ from xml.dom.minidom import parse
 from os import makedirs, listdir, system
 from os.path import exists as path_exists
 import pycrfsuite
-
 # Reference constants
 MODELS = ["CRF", "MaxEnt"]
 LABELS = ["B-drug", "I-drug", "B-drug_n", "I-drug_n", "B-brand", "I-brand",
@@ -85,11 +84,11 @@ def tokenize(s):
     Returns:
         - tokens: list of tuples (token, start-index, end-index)
     """
-    text = reg_sub(r"[,.:();'\"]+", " ", s)
+    text = reg_sub(r"[(,.:;'\")]+", " ", s)
     tokenizer = Tokenizer()
     spans = tokenizer.span_tokenize(text)
     tokens = tokenizer.tokenize(text)
-    tokens = [(t, s[0], s[1] - 1) for t, s in zip(tokens, spans)]
+    tokens = [(t, s[0], s[1]-1) for t, s in zip(tokens, spans)]
     return tokens
 
 
@@ -114,29 +113,31 @@ def extract_features(token_list):
         if i == 0:
             prev = "prev=_BoS_"
         else:
-            prev = f"prev={token_list[i - 1][0]}"
+            prev = f"prev={token_list[i-1][0]}"
         # Next token
-        if i == (len(token_list) - 1):
+        if i == (len(token_list)-1):
             nxt = "next=_EoS_"
         else:
-            nxt = f"next={token_list[i + 1][0]}"
+            nxt = f"next={token_list[i+1][0]}"
         # Begin with capital letter
-        b_capital = f"b_capital={token[0].isupper()}"
-        # Ends with capital letter
-        e_capital = f"e_capital={token[-1].isupper()}"
+        if token[0].isupper():
+            b_capital = "TRUE"
+        else:
+            b_capital = "FALSE"
         # All token in capital letters
-        capital = f"capital={token.isupper()}"
+        capital = str(token.isupper())
         # Token contains a digit
-        digit = f"digit={any(i.isdigit() for i in token)}"
+        digit = str(any(i.isdigit() for i in token))
         # Token contains a hyphen
-        hyphen = f"hyphen={'-' in token}"
-        # Token contains a ()
-        # paren = f"paren={any(['(' in token, ')' in token])}"
-        paren = f"True"
-        # Token contains a ()
-        sign = f"sign={any(['+' in token, '-' in token])}"
+        hyphen = str("-" in token)
+        hyphen = str("True")
 
-        features.append([form, suf4, nxt, prev, b_capital, e_capital, capital, digit, hyphen, paren, sign])
+        # Token contains a ()
+        paren = str(any(["(" in token, "(" in token]))
+        # Token contains a ()
+        sign = str(any(["+" in token, "-" in token]) & ("(" in token))
+
+        features.append([form, suf4, nxt, prev, b_capital, capital, digit, hyphen, paren, sign])
     return features
 
 
@@ -217,57 +218,6 @@ def get_sentence_features(input):
 def output_entities(id, tokens, classes, outf):
     """
     """
-
-    def find_entities(ind, name0='', start0=float('inf'), end0=-1.0, flag=False):
-
-        if ind < len(tokens):
-            token, tag = tokens[ind], classes[ind]
-            name, start, end = token
-            start, end = int(start), int(end)
-
-        else:
-            return name0, start0, end0, ind - 1, classes[ind - 1]
-        ind += 1
-
-        if ("B" in tag) & (flag == False):
-            name, start, end, ind, tag = find_entities(ind, name0=name, start0=start, end0=end, flag=True)
-            return name, start, end, ind, tag
-
-        elif ("I" in tag) & (ind < len(tokens)):
-            if name0 != '': name = ' '.join([name0, name])
-            start = int(min(start0, float(start)))
-            end = int(max(end0, float(end)))
-            name, start, end, ind, tag = find_entities(ind, name0=name, start0=start, end0=end, flag=True)
-            return name, start, end, ind, tag
-
-        elif flag:
-            ind = ind - 1
-            return name0, start0, end0, ind - 1, classes[ind - 1]
-
-        elif not flag:
-            return name, start, end, ind - 1, classes[ind - 1]
-
-    ind = 0
-    while ind < len(tokens):
-        if classes[ind] == "O":
-            ind += 1
-            continue
-        elif ("B" in classes[ind]) | ("I" in classes[ind]):
-            name, start, end, ind, tag = find_entities(ind)
-
-        else:
-            token, tag = tokens[ind], classes[ind]
-            name, start, end = token
-
-        offset = f"{start}-{end}"
-        types = tag.split("-")[1]
-        txt = f"{id}|{offset}|{name}|{types}\n"
-        outf.write(txt)
-        ind += 1
-
-
-"""def output_entities(id, tokens, classes, outf):
-    
     for token, tag in zip(tokens, classes):
         if tag == "O":
             continue
@@ -275,7 +225,7 @@ def output_entities(id, tokens, classes, outf):
         offset = f"{start}-{end}"
         type = tag.split("-")[1]
         txt = f"{id}|{offset}|{name}|{type}\n"
-        outf.write(txt)    """
+        outf.write(txt)
 
 
 def learner(model, feature_input, output_fn):
