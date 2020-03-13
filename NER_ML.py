@@ -25,6 +25,8 @@ train_features_fn = f"{tmp_path}/ML_train_features.txt"
 valid_features_fn = f"{tmp_path}/ML_valid_features.txt"
 # Model path to save it
 ml_model_fn = f"{tmp_path}/ML_model"
+# Specify local megam file
+megam = "megam_i686.opt"
 
 
 def parseXML(file):
@@ -84,7 +86,7 @@ def tokenize(s):
     Returns:
         - tokens: list of tuples (token, start-index, end-index)
     """
-    text = reg_sub(r"[,.:;'\"]+", " ", s)
+    text = reg_sub(r"[,.:;'\"]", " ", s)
     tokenizer = Tokenizer()
     spans = tokenizer.span_tokenize(text)
     tokens = tokenizer.tokenize(text)
@@ -134,7 +136,9 @@ def extract_features(token_list):
         # Token contains a ()
         sign = f"sign={any(['+' in token, '-' in token])}"
 
-        features.append([form, suf4, nxt, prev, b_capital, e_capital, capital, digit, hyphen, paren, sign])
+        feats = [form, suf4, nxt, prev, b_capital, e_capital, capital, digit,
+                 hyphen, paren, sign]
+        features.append(feats)
     return features
 
 
@@ -216,7 +220,8 @@ def output_entities(id, tokens, classes, outf):
     """
     """
 
-    def find_entities(ind, name0='', start0=float('inf'), end0=-1.0, flag=False):
+    def find_entities(ind, name0='', start0=float('inf'), end0=-1.0,
+                      flag=False):
 
         if ind < len(tokens):
             token, tag = tokens[ind], classes[ind]
@@ -227,15 +232,28 @@ def output_entities(id, tokens, classes, outf):
             return name0, start0, end0, ind - 1, classes[ind - 1]
         ind += 1
 
-        if ("B" in tag) & (flag == False):
-            name, start, end, ind, tag = find_entities(ind, name0=name, start0=start, end0=end, flag=True)
+        if ("B" in tag) & (flag is False):
+            name, start, end, ind, tag = find_entities(
+                ind,
+                name0=name,
+                start0=start,
+                end0=end,
+                flag=True
+            )
             return name, start, end, ind, tag
 
         elif ("I" in tag) & (ind < len(tokens)):
-            if name0 != '': name = ' '.join([name0, name])
+            if name0 != '':
+                name = ' '.join([name0, name])
             start = int(min(start0, float(start)))
             end = int(max(end0, float(end)))
-            name, start, end, ind, tag = find_entities(ind, name0=name, start0=start, end0=end, flag=True)
+            name, start, end, ind, tag = find_entities(
+                ind,
+                name0=name,
+                start0=start,
+                end0=end,
+                flag=True
+            )
             return name, start, end, ind, tag
 
         elif flag:
@@ -263,17 +281,15 @@ def output_entities(id, tokens, classes, outf):
         outf.write(txt)
         ind += 1
 
-
-"""def output_entities(id, tokens, classes, outf):
-    
-    for token, tag in zip(tokens, classes):
-        if tag == "O":
-            continue
-        name, start, end = token
-        offset = f"{start}-{end}"
-        type = tag.split("-")[1]
-        txt = f"{id}|{offset}|{name}|{type}\n"
-        outf.write(txt)    """
+    # # Previous implementation
+    # for token, tag in zip(tokens, classes):
+    #     if tag == "O":
+    #         continue
+    #     name, start, end = token
+    #     offset = f"{start}-{end}"
+    #     type = tag.split("-")[1]
+    #     txt = f"{id}|{offset}|{name}|{type}\n"
+    #     outf.write(txt)
 
 
 def learner(model, feature_input, output_fn):
@@ -281,17 +297,21 @@ def learner(model, feature_input, output_fn):
     """
     _, X_train, Y_train = get_sentence_features(feature_input)
     if model == "CRF":
+        # CRF learner flow
         trainer = pycrfsuite.Trainer(verbose=False)
         for xseq, yseq in zip(X_train, Y_train):
             trainer.append(xseq, yseq)
         trainer.train(f"{output_fn}.crfsuite")
+
     elif model == "MaxEnt":
+        # MaxEnt learner flow
         megam_features = f"{tmp_path}/megam_train_features.dat"
         megam_model = f"{output_fn}.megam"
         system(f"cat {feature_input} | cut -f5- | grep -v ’^$’ > \
             {megam_features}")
         system(f"./{megam} -quiet -nc -nobias multiclass \
             {megam_features} > {megam_model}")
+
     else:
         print(f"[ERROR] Model {model} not implemented")
         raise NotImplementedError
@@ -300,10 +320,13 @@ def learner(model, feature_input, output_fn):
 def classifier(model, feature_input, model_input, outputfile):
     sentences, X_valid, Y_valid = get_sentence_features(feature_input)
     if model == "CRF":
+        # CRF classifier flow
         tagger = pycrfsuite.Tagger()
         tagger.open(f"{model_input}.crfsuite")
         predictions = [tagger.tag(x) for x in X_valid]
+
     elif model == "MaxEnt":
+        # MaxEnt classifier flow
         megam_features = f"{tmp_path}/megam_valid_features.dat"
         megam_predictions = f"{tmp_path}/megam_predictions.dat"
         system(f"cat {feature_input} | cut -f5- | grep -v ’^$’ > \
@@ -319,6 +342,7 @@ def classifier(model, feature_input, model_input, outputfile):
             end = start + len(sent)
             predictions.append(pred_classes[start:end])
             start = end
+
     else:
         print(f"[ERROR] Model {model} not implemented")
         raise NotImplementedError
