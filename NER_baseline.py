@@ -1,8 +1,9 @@
 """
 """
 # !/usr/bin/python3
+from math import inf
 from nltk.tokenize.regexp import WhitespaceTokenizer as Tokenizer
-from re import sub
+from re import sub, match
 from xml.dom.minidom import parse
 import os
 # Global variables to control script flow
@@ -69,31 +70,54 @@ def extract_entities(token_list):
     """
     # Common drug terms
     with open("data/Rules/suffixes.txt", "r") as fp:
-        terms = [s.replace("\n", "") for s in fp.readlines()]
-    with open("data/Rules/plural_sufixes.txt", "r") as fp:
-        plural_suffixes = [s.replace("\n", "") for s in fp.readlines()]
+        suffixes = [s.replace("\n", "") for s in fp.readlines()]
+    with open("data/Rules/group_suffixes.txt", "r") as fp:
+        group_suffixes = [s.replace("\n", "") for s in fp.readlines()]
     ents = []
-    for i, token_t in enumerate(token_list):
-        token, start, end = token_t
+    i = 0
+    i_max = len(token_list)
+    while i < i_max:
+        token, start, end = token_list[i]
+        nxt_token, nxt_stat, nxt_end = token_list[i+1] if i < (i_max-1) else \
+            ("EOS", inf, inf)
+        prv_token, prv_stat, prv_end = token_list[i-1] if i > 0 else \
+            ("BOS", inf, inf)
         type = None
         # Rules to detect if token is entity
-        if token.isupper() and len(token) > 4:
-            # Uppercase brand names
-            # Avoid numerals and acronyms by limiting length
+        # Detect "XX acid" drugs
+        if nxt_token == "acid":
+            type = "drug"
+            token = f"{token} {nxt_token}"
+            end = nxt_end
+            i += 1
+        # Detect "XX agents", "XX drugs" and "XX drug" groups
+        elif ((nxt_token == "agents") or (nxt_token == "drugs")
+              or (nxt_token == "drug")):
+            type = "group"
+            token = f"{token} {nxt_token}"
+            end = nxt_end
+            i += 1
+        # Detect {Digit}-{name} drug_n
+        elif match(r"\d+-\w", token):
+            type = "drug_n"
+        # Uppercase brand names
+        # Avoid numerals and acronyms by limiting length
+        elif token.isupper() and len(token) > 4:
             type = "brand"
-        for term in terms:
-            # If common term in token, probably drug
-            if term in token:
-                # Drugs with plural names tend to be groups
-                # thus, we look for plurals
-                if token.endswith(tuple(plural_suffixes)):
-                    type = "group"
-                else:
-                    type = "drug"
-                break
+        # Numerals and acronyms probably drugs
+        elif token.isupper() and len(token) <= 4:
+            type = "drug"
+        # If common suffix in token, probably drug
+        elif token.endswith(tuple(suffixes)):
+            type = "drug"
+        # Detect group suffixes
+        elif token.endswith(tuple(group_suffixes)):
+            type = "group"
         if type is not None:
             ent = {"name": token, "offset": f"{start}-{end}", "type": type}
             ents.append(ent)
+        # Pass to next token
+        i += 1
     return ents
 
 
