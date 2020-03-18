@@ -2,18 +2,22 @@
 """
 # !/usr/bin/python3
 from nltk.tokenize.regexp import WhitespaceTokenizer as Tokenizer
-from re import sub as reg_sub
-from xml.dom.minidom import parse
 from os import makedirs, listdir, system
 from os.path import exists as path_exists
+from re import sub as reg_sub, match
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import OneHotEncoder
+from xml.dom.minidom import parse
+import numpy as np
+import pickle
 import pycrfsuite
 # Reference constants
-MODELS = ["CRF", "MaxEnt"]
+MODELS = ["CRF", "MaxEnt", "RandomForest"]
 LABELS = ["B-drug", "I-drug", "B-drug_n", "I-drug_n", "B-brand", "I-brand",
           "B-group", "I-group", "O"]
 # Global variables to control script flow
 tmp_path = "data/tmp"
-model = "CRF"
+model = "RandomForest"
 # Assign output file for entities
 if not path_exists(tmp_path):
     makedirs(tmp_path)
@@ -27,6 +31,8 @@ valid_features_fn = f"{tmp_path}/ML_valid_features.txt"
 ml_model_fn = f"{tmp_path}/ML_model"
 # Specify local megam file
 megam = "megam_i686.opt"
+# Random forest params
+random_seed = 42
 
 
 def parseXML(file):
@@ -111,6 +117,21 @@ def extract_features(token_list):
         # Suffix's 4 last letters
         suf4 = token[-4:]
         suf4 = f"suf4={suf4}"
+        # Suffix's 3 last letters
+        suf3 = token[-3:]
+        suf3 = f"suf3={suf3}"
+        # Suffix's 2 last letters
+        suf2 = token[-2:]
+        suf2 = f"suf2={suf2}"
+        # Prefix's 4 first letters
+        pre4 = token[:4]
+        pre4 = f"pre4={pre4}"
+        # Prefix's 3 first letters
+        pre3 = token[:3]
+        pre3 = f"pre3={pre3}"
+        # Prefix's 2 first letters
+        pre2 = token[:2]
+        pre2 = f"pre2={pre2}"
         # Prev token
         if i == 0:
             prev = "prev=_BoS_"
@@ -121,23 +142,34 @@ def extract_features(token_list):
             nxt = "next=_EoS_"
         else:
             nxt = f"next={token_list[i + 1][0]}"
-        # Begin with capital letter
-        b_capital = f"b_capital={token[0].isupper()}"
-        # Ends with capital letter
-        e_capital = f"e_capital={token[-1].isupper()}"
         # All token in capital letters
         capital = f"capital={token.isupper()}"
-        # Token contains a digit
-        digit = f"digit={any(i.isdigit() for i in token)}"
-        # Token contains a hyphen
-        hyphen = f"hyphen={'-' in token}"
-        # Token contains a ()
-        paren = f"paren={any(['(' in token, ')' in token])}"
-        # Token contains a ()
-        sign = f"sign={any(['+' in token, '-' in token])}"
-
-        feats = [form, suf4, nxt, prev, b_capital, e_capital, capital, digit,
-                 hyphen, paren, sign]
+        # Begin with capital letter
+        b_capital = f"b_capital={token[0].isupper()}"
+        # Number of capitals in token
+        capitals = str(sum(i.isupper() for i in token))
+        # Number of digits in token
+        digits = str(sum(i.isdigit() for i in token))
+        # Number of hyphens in token
+        hyphens = str(sum('-' == i for i in token))
+        # Token length
+        leng = str(len(token))
+        # Token has Digit-Captial combination
+        dig_cap = not not match(r"\d+-[A-Z]+", token)
+        dig_cap = f"dig_cap={dig_cap}"
+        # Feats list
+        if model == "MaxEnt":
+            feats = [form, pre2, pre3, pre4, suf2, suf4]
+        elif model == "CRF":
+            feats = [form, capital, nxt, pre2, pre3, pre4, suf2, suf4,
+                     capitals, hyphens, leng]
+        elif model == "RandomForest":
+            feats = [b_capital, capital, dig_cap, suf2,
+                     capitals, digits, hyphens, leng]
+        else:
+            feats = [form, b_capital, capital, dig_cap,
+                     nxt, pre2, pre3, pre4, prev, suf2, suf3, suf4,
+                     capitals, digits, hyphens, leng]
         features.append(feats)
     return features
 
@@ -209,6 +241,12 @@ def get_sentence_features(input):
         tokens = sent.split("\n")
         feats = [token.split("\t") for token in tokens if len(token)]
         x = [f[5:] for f in feats if len(f)]
+        # Turn back numeric variables
+        # only for RandomForest model
+        if model == "RandomForest":
+            for i, token in enumerate(x):
+                val = [int(elem) if elem.isdigit() else elem for elem in token]
+                x[i] = val
         y = [f[4] for f in feats if len(f)]
         full_tokens.append(feats)
         X_feat.append(x)
@@ -220,76 +258,34 @@ def output_entities(id, tokens, classes, outf):
     """
     """
 
-    def find_entities(ind, name0='', start0=float('inf'), end0=-1.0,
-                      flag=False):
-
-        if ind < len(tokens):
-            token, tag = tokens[ind], classes[ind]
-            name, start, end = token
-            start, end = int(start), int(end)
-
-        else:
-            return name0, start0, end0, ind - 1, classes[ind - 1]
-        ind += 1
-
-        if ("B" in tag) & (flag is False):
-            name, start, end, ind, tag = find_entities(
-                ind,
-                name0=name,
-                start0=start,
-                end0=end,
-                flag=True
-            )
-            return name, start, end, ind, tag
-
-        elif ("I" in tag) & (ind < len(tokens)):
-            if name0 != '':
-                name = ' '.join([name0, name])
-            start = int(min(start0, float(start)))
-            end = int(max(end0, float(end)))
-            name, start, end, ind, tag = find_entities(
-                ind,
-                name0=name,
-                start0=start,
-                end0=end,
-                flag=True
-            )
-            return name, start, end, ind, tag
-
-        elif flag:
-            ind = ind - 1
-            return name0, start0, end0, ind - 1, classes[ind - 1]
-
-        elif not flag:
-            return name, start, end, ind - 1, classes[ind - 1]
-
     ind = 0
     while ind < len(tokens):
-        if classes[ind] == "O":
+        tag = classes[ind]
+        type = tag.split("-")[-1]
+        if tag == "O":
             ind += 1
             continue
-        elif ("B" in classes[ind]) | ("I" in classes[ind]):
-            name, start, end, ind, tag = find_entities(ind)
-
-        else:
-            token, tag = tokens[ind], classes[ind]
-            name, start, end = token
-
+        elif "B" in tag:  # If Beginning of an entity
+            name, start, end = tokens[ind]
+            # Check if next token I-same_type
+            # Continue search until EoS or no-match
+            ind += 1
+            tag_nxt = classes[ind] if ind < len(tokens) else "O"
+            type_nxt = tag_nxt.split("-")[-1]
+            while ind < len(tokens) and "I" in tag_nxt and type_nxt == type:
+                name_nxt, _, end_nxt = tokens[ind]
+                name = f"{name} {name_nxt}"
+                end = end_nxt
+                ind += 1
+                tag_nxt = classes[ind] if ind < len(tokens) else "O"
+                type_nxt = tag_nxt.split("-")[-1]
+        else:  # I-tag
+            name, start, end = tokens[ind]
+            ind += 1
+        # Print entity and continue
         offset = f"{start}-{end}"
-        types = tag.split("-")[1]
-        txt = f"{id}|{offset}|{name}|{types}\n"
+        txt = f"{id}|{offset}|{name}|{type}\n"
         outf.write(txt)
-        ind += 1
-
-    # # Previous implementation
-    # for token, tag in zip(tokens, classes):
-    #     if tag == "O":
-    #         continue
-    #     name, start, end = token
-    #     offset = f"{start}-{end}"
-    #     type = tag.split("-")[1]
-    #     txt = f"{id}|{offset}|{name}|{type}\n"
-    #     outf.write(txt)
 
 
 def learner(model, feature_input, output_fn):
@@ -311,6 +307,28 @@ def learner(model, feature_input, output_fn):
             {megam_features}")
         system(f"./{megam} -quiet -nc -nobias multiclass \
             {megam_features} > {megam_model}")
+
+    elif model == "RandomForest":
+        # Unlist sentences
+        x_cat = []
+        x_num = []
+        y = []
+        for x_sent, y_sent in zip(X_train, Y_train):
+            x_cat_sent = [f[:4] for f in x_sent]
+            x_num_sent = [f[4:] for f in x_sent]
+            x_cat.extend(x_cat_sent)
+            x_num.extend(x_num_sent)
+            y.extend(y_sent)
+        # One hot encoder to turn categorical variables to binary
+        encoder = OneHotEncoder(handle_unknown="ignore")
+        encoder.fit(x_cat)
+        x_encoded = encoder.transform(x_cat).toarray()
+        x = np.concatenate((x_encoded, x_num), axis=1)
+        model = RandomForestClassifier(random_state=random_seed)
+        model.fit(x, y)
+        # Save model to pickle
+        with open(f"{output_fn}.randomForest", "wb") as fp:
+            pickle.dump([model, encoder], fp)
 
     else:
         print(f"[ERROR] Model {model} not implemented")
@@ -336,6 +354,28 @@ def classifier(model, feature_input, model_input, outputfile):
         with open(megam_predictions, "r") as fp:
             lines = fp.readlines()
         pred_classes = [line.split("\t")[0] for line in lines]
+        predictions = []
+        start = 0
+        for sent in X_valid:
+            end = start + len(sent)
+            predictions.append(pred_classes[start:end])
+            start = end
+
+    elif model == "RandomForest":
+        with open(f"{model_input}.randomForest", "rb") as fp:
+            model, encoder = pickle.load(fp)
+        # Unlist sentences
+        x_cat = []
+        x_num = []
+        for x_sent in X_valid:
+            x_cat_sent = [f[:4] for f in x_sent]
+            x_num_sent = [f[4:] for f in x_sent]
+            x_cat.extend(x_cat_sent)
+            x_num.extend(x_num_sent)
+        # One hot encoder to turn categorical variables to binary
+        x_encoded = encoder.transform(x_cat).toarray()
+        x = np.concatenate((x_encoded, x_num), axis=1)
+        pred_classes = model.predict(x)
         predictions = []
         start = 0
         for sent in X_valid:
