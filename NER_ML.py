@@ -144,6 +144,7 @@ def extract_features(token_list):
             nxt_end = nxt
         else:
             nxt = f"next={token_list[i + 1][0].lower()}"
+            # Next token end
             nxt_end = f"next={token_list[i + 1][0][-3:-1]}"
         # All token in capital letters
         capital_num = str(int(token.isupper()))
@@ -173,20 +174,17 @@ def extract_features(token_list):
         if model == "MaxEnt":
             feats = [form, pre2, pre3, pre4, suf2, suf4]
         elif model == "CRF":
+            # Minimum entities to reach Goal 3
             feats = [form, capital, nxt, pre2, suf2, prev,
-                    capitals,
-                    # Entities tu reach the maximum F1
-                    pre3, pre4, suf4, dig_cap, hyphens, length]
-
+                     capitals,
+                     # Entities tu reach the maximum F1
+                     pre3, pre4, suf4, dig_cap, hyphens, length
+                     ]
         elif model == "RandomForest":
+            # Entities to reach Goal 3
             feats = [suf2, pre2, nxt_end, b_capital, capital, dig_cap,
-                     #
-                     #nxt, pre2, pre3, pre4, prev, suf2, suf3, suf4,
                      capitals[-1], digits[-1], hyphens[-1], symbols[-1], length[-1]]
-
         else:
-            print('Warning!!!! some sentences are not included in the gold!!!')
-
             feats = [form, b_capital, ends_s, capital, dig_cap,
                      nxt, pre2, pre3, pre4, prev, suf2, suf3, suf4,
                      capitals, digits, hyphens, symbols, length]
