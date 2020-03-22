@@ -18,14 +18,14 @@ LABELS = ["B-drug", "I-drug", "B-drug_n", "I-drug_n", "B-brand", "I-brand",
           "B-group", "I-group", "O"]
 # Global variables to control script flow
 tmp_path = "data/tmp"
-model = "RandomForest"
+model = "CRF"
 # Assign output file for entities
 if not path_exists(tmp_path):
     makedirs(tmp_path)
     print(f"[INFO] Created a new folder {tmp_path}")
 # Training/Validation features files
 train_input_fn = "data/Train"
-valid_input_fn = "data/Devel"
+valid_input_fn = "data/Test-NER"
 train_features_fn = f"{tmp_path}/ML_train_features.txt"
 valid_features_fn = f"{tmp_path}/ML_valid_features.txt"
 # Model path to save it
@@ -136,10 +136,8 @@ def extract_features(token_list):
         # Prev token
         if i == 0:
             prev = "prev=_BoS_"
-            prev_end = prev
         else:
             prev = f"prev={token_list[i - 1][0].lower()}"
-            prev_end = f"prev={token_list[i - 1][0][-3:-1]}"
         # Next token
         if i == (len(token_list) - 1):
             nxt = "next=_EoS_"
@@ -157,38 +155,29 @@ def extract_features(token_list):
         ends_s_num = str(int(token.endswith('s')))
         ends_s = f"ends_s={ends_s_num}"
         # Number of has spaces in token
-        spaces_num = str(int(token.find(' ') != -1))
-        spaces = f"spaces={spaces_num}"
         # Number of digits in token
         digits = f"digits={sum(i.isdigit() for i in token)}"
         # Number of capitals in token
         capitals = f"capitals={sum(i.isupper() for i in token)}"
         # Number of hyphens in token
         hyphens = f"hyphens={sum(['-' == i for i in token])}"
-        # Number of hyphens in token
+        # Number of symbols in token
         symbols = f"symbols={len(re.findall(r'[()+-]', token))}"
         # Token length
         length = f"length={len(token)}"
-        lenght_16 = f"{len(token)<16}"
         # Token has Digit-Captial combination
         dig_cap_num = str(int(bool(re.compile("([A-Z]+[0-9]+.*)").match(token) or re.compile(
             "([0-9]+[A-Z]+.*)").match(token))))
         dig_cap = f"dig_cap={dig_cap_num}"
-        #agent_drug = f"agent_drug={any([token.find('agent'), token.find('drug')])
         # Feats list
         if model == "MaxEnt":
             feats = [form, pre2, pre3, pre4, suf2, suf4]
         elif model == "CRF":
-            feats = [
-                    #[form, capital, nxt, pre2, suf2, prev,
-                     #pre3, pre4, suf4,
-                    #3capitals, dig_cap
-                     #hyphens, length,
-                     form, capital, nxt, pre2, pre3, pre4, suf2, suf4, dig_cap,
-                     capitals, hyphens, length
-                     ]
-            #[form, capital, nxt, pre2, pre3, pre4, suf2, suf4, ends_s, spaces,] #NO len_16
-                   # bool(digits), bool(capitals, bool(hyphens), bool(symbols), bool(length)]
+            feats = [form, capital, nxt, pre2, suf2, prev,
+                    capitals,
+                    # Entities tu reach the maximum F1
+                    pre3, pre4, suf4, dig_cap, hyphens, length]
+
         elif model == "RandomForest":
             feats = [suf2, pre2, nxt_end, b_capital, capital, dig_cap,
                      #
