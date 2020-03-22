@@ -9,6 +9,7 @@ import os
 # Global variables to control script flow
 input_default_path = "data/Devel"
 tmp_path = "data/tmp"
+output_default_path = f"{tmp_path}/task9.1_BASELINE_1.txt"
 
 
 def parseXML(file):
@@ -60,15 +61,17 @@ def tokenize(s):
 
 def extract_entities(token_list):
     """
-    Extract entitites
+    Extract entitites.
     Fuction to extract and tag the entites of the give token lists, taggin each
     foun entity with a type given a set of rules.
+
     Args:
         - token_list: list of token strings with token words
     Returns:
         - ents: list of dictionaries with entities' name, type and offset.
     """
-    # Common drug suffixes/prefixes
+    # For use in entity recognition rules
+    # Common drug suffixes
     with open("data/Rules/drug_suffixes.txt", "r") as fp:
         drug_suffixes = [s.replace("\n", "") for s in fp.readlines()]
     with open("data/Rules/group_suffixes.txt", "r") as fp:
@@ -77,17 +80,24 @@ def extract_entities(token_list):
         brand_suffixes = [s.replace("\n", "") for s in fp.readlines()]
     with open("data/Rules/drug_n_suffixes.txt", "r") as fp:
         drug_n_suffixes = [s.replace("\n", "") for s in fp.readlines()]
+
+    # Init output list
     ents = []
+    # Iterate over index of token_list and detect entity type with rules
+    # if no entity type detected, token is discarded and next token evaluated.
     i = 0
     i_max = len(token_list)
     while i < i_max:
+        # Take token info
         token, start, end = token_list[i]
+        # We take next token and previous token (if any) to evaluate
+        # composite entity names.
         nxt_token, nxt_stat, nxt_end = token_list[i+1] if i < (i_max-1) else \
             ("EOS", inf, inf)
         prv_token, prv_stat, prv_end = token_list[i-1] if i > 0 else \
             ("BOS", inf, inf)
         type = None
-        # Rules to detect if token is entity
+        # Rules to detect if token is entity and which type
         # Detect "XX acid" drugs
         if nxt_token == "acid":
             type = "drug"
@@ -102,26 +112,30 @@ def extract_entities(token_list):
             token = f"{token} {nxt_token}"
             end = nxt_end
             i += 1
-        # Detect {Digit}-{name} drug_n
-        elif (match(r"\d+-[a-zA-Z]+", token)
+        # Detect drug_n with usual suffixes
+        elif (token.endswith(tuple(drug_n_suffixes))
+              # Features for Goal 2
+              # Tokens of type drug_n have on average more number of
+              # non-alphanumeric symbols.
               or sum(w in ["+", "-", "(", ")"] for w in token)
-              or token.endswith(tuple(drug_n_suffixes))):
+              ):
             type = "drug_n"
-        # Uppercase brand names
-        # Avoid numerals and acronyms by limiting length
         # Detect common brand suffixes
-        elif (token.isupper() and len(token) > 4
-              or token.endswith(tuple(brand_suffixes))):
+        elif (token.endswith(tuple(brand_suffixes))
+              # Uppercase brand names
+              # Avoid numerals and acronyms by limiting length
+              or token.isupper() and len(token) > 4
+              ):
             type = "brand"
-        # Numerals and acronyms probably drugs
-        # If common suffix in token, probably drug
-        elif ((token.isupper() and len(token) <= 4)
-              or token.endswith(tuple(drug_suffixes))):
-            type = "drug"
-        # Single group detections
-        elif (token.endswith(tuple(group_suffixes))  # Detect group suffixes
-              or match(r"[A-Z]+s$", token)):  # Detect plural acronyms ADs
+        # Detect common group suffixes
+        elif (token.endswith(tuple(group_suffixes))
+              # Detect plural acronyms i.e. ADs
+              or match(r"[A-Z]+s$", token)
+              ):
             type = "group"
+        # Detect common drug suffixes
+        elif token.endswith(tuple(drug_suffixes)):
+            type = "drug"
         # If type was set, then it's an entity
         if type is not None:
             ent = {"name": token, "offset": f"{start}-{end}", "type": type}
@@ -186,7 +200,7 @@ if __name__ == "__main__":
         os.makedirs(tmp_path)
         print(f"[INFO] Created a new folder {tmp_path}")
     # Evaluation output file config
-    outputfile = f"{tmp_path}/task9.1_BASELINE_1.txt"
+    outputfile = output_default_path
     if os.path.exists(outputfile):
         os.remove(outputfile)
     # Run NERC
