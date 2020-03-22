@@ -95,7 +95,9 @@ def extract_entities(token_list):
             end = nxt_end
             i += 1
         # Detect "XX agents", "XX drugs" and "XX drug" groups
-        elif ((nxt_token == "agents") or (nxt_token == "drugs")):
+        elif ((nxt_token.lower().find('agent') != -1) or (nxt_token.lower().find('drug') != -1)
+              or nct_token.lower().find('ium') != -1) or (nxt_token.lower().find('s') != -1)):
+            f.lower().endswith('s'), f.lower().find('ium')
             type = "group"
             token = f"{token} {nxt_token}"
             end = nxt_end

@@ -8,6 +8,7 @@ from re import sub as reg_sub, match
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import OneHotEncoder
 from xml.dom.minidom import parse
+import re
 import numpy as np
 import pickle
 import pycrfsuite
@@ -17,7 +18,7 @@ LABELS = ["B-drug", "I-drug", "B-drug_n", "I-drug_n", "B-brand", "I-brand",
           "B-group", "I-group", "O"]
 # Global variables to control script flow
 tmp_path = "data/tmp"
-model = "RandomForest"
+model = "CRF"
 # Assign output file for entities
 if not path_exists(tmp_path):
     makedirs(tmp_path)
@@ -103,7 +104,7 @@ def tokenize(s):
 def extract_features(token_list):
     """
     Extract Features
-    Fuction to extract features from each token of the given token list.
+    Function to extract features from each token of the given token list.
     Args:
         - token_list: list of token strings with token words
     Returns:
@@ -113,9 +114,9 @@ def extract_features(token_list):
     for i, token_t in enumerate(token_list):
         token, start, end = token_t
         # Token form
-        form = f"form={token}"
+        form = f"form={token.lower()}"
         # Suffix's 4 last letters
-        suf4 = token[-4:]
+        suf4 = token[-4:].lower()
         suf4 = f"suf4={suf4}"
         # Suffix's 3 last letters
         suf3 = token[-3:]
@@ -135,41 +136,63 @@ def extract_features(token_list):
         # Prev token
         if i == 0:
             prev = "prev=_BoS_"
+            prev_end = prev
         else:
-            prev = f"prev={token_list[i - 1][0]}"
+            prev = f"prev={token_list[i - 1][0].lower()}"
+            prev_end = f"prev={token_list[i - 1][0][-3:-1]}"
         # Next token
         if i == (len(token_list) - 1):
             nxt = "next=_EoS_"
+            nxt_ini = nxt
         else:
-            nxt = f"next={token_list[i + 1][0]}"
+            nxt = f"next={token_list[i + 1][0].lower()}"
+            nxt_ini = f"next={token_list[i + 1][0][0:3]}"
         # All token in capital letters
-        capital = f"capital={token.isupper()}"
+        capital_num = str(int(token.isupper()))
+        capital = f"capital={capital_num}"
         # Begin with capital letter
-        b_capital = f"b_capital={token[0].isupper()}"
-        # Number of capitals in token
-        capitals = str(sum(i.isupper() for i in token))
+        b_capital_num = str(int(token[0].isupper()))
+        b_capital = f"b_capital={b_capital_num}"
+        # Ends s for plurals
+        ends_s_num = str(int(token.endswith('s')))
+        ends_s = f"ends_s={ends_s_num}"
+        # Number of has spaces in token
+        spaces_num = str(int(token.find(' ') != -1))
+        spaces = f"spaces={spaces_num}"
         # Number of digits in token
-        digits = str(sum(i.isdigit() for i in token))
+        digits = f"digits={sum(i.isdigit() for i in token)}"
+        # Number of capitals in token
+        capitals = f"capitals={sum(i.isupper() for i in token)}"
         # Number of hyphens in token
-        hyphens = str(sum('-' == i for i in token))
+        hyphens = f"hyphens={any(['-' == i for i in token])}"
+        # Number of hyphens in token
+        symbols = f"symbols={len(re.findall(r'[()+-]', token))}"
         # Token length
-        leng = str(len(token))
+        length = f"length={len(token)}"
+        lenght_16 = f"{len(token)<16}"
         # Token has Digit-Captial combination
-        dig_cap = not not match(r"\d+-[A-Z]+", token)
-        dig_cap = f"dig_cap={dig_cap}"
+        dig_cap_num = str(int(bool(re.compile("([A-Z]+[0-9]+.*)").match(token) or re.compile(
+            "([0-9]+[A-Z]+.*)").match(token))))
+        dig_cap = f"dig_cap={dig_cap_num}"
+        #agent_drug = f"agent_drug={any([token.find('agent'), token.find('drug')])
         # Feats list
         if model == "MaxEnt":
             feats = [form, pre2, pre3, pre4, suf2, suf4]
         elif model == "CRF":
-            feats = [form, capital, nxt, pre2, pre3, pre4, suf2, suf4,
-                     capitals, hyphens, leng]
+            feats = [form, capital, nxt_ini, pre2, pre3, pre4, suf2, suf4, dig_cap,
+                     capitals, hyphens, length]
+            #[form, capital, nxt, pre2, pre3, pre4, suf2, suf4, ends_s, spaces,] #NO len_16
+                   # bool(digits), bool(capitals, bool(hyphens), bool(symbols), bool(length)]
         elif model == "RandomForest":
-            feats = [b_capital, capital, dig_cap, suf2,
-                     capitals, digits, hyphens, leng]
+            feats = [suf2, pre2, nxt_ini, prev_end, b_capital, ends_s, capital, dig_cap,
+                     #nxt, pre2, pre3, pre4, prev, suf2, suf3, suf4,
+                     capitals[-1], digits[-1], hyphens[-1], symbols[-1], length[-1]]
         else:
-            feats = [form, b_capital, capital, dig_cap,
+            print('Warning!!!! some sentences are not included in the gold!!!')
+
+            feats = [form, b_capital, ends_s, capital, dig_cap,
                      nxt, pre2, pre3, pre4, prev, suf2, suf3, suf4,
-                     capitals, digits, hyphens, leng]
+                     capitals, digits, hyphens, symbols, length]
         features.append(feats)
     return features
 
@@ -314,8 +337,8 @@ def learner(model, feature_input, output_fn):
         x_num = []
         y = []
         for x_sent, y_sent in zip(X_train, Y_train):
-            x_cat_sent = [f[:4] for f in x_sent]
-            x_num_sent = [f[4:] for f in x_sent]
+            x_cat_sent = [f[:8] for f in x_sent]
+            x_num_sent = [f[8:] for f in x_sent]
             x_cat.extend(x_cat_sent)
             x_num.extend(x_num_sent)
             y.extend(y_sent)
@@ -368,8 +391,8 @@ def classifier(model, feature_input, model_input, outputfile):
         x_cat = []
         x_num = []
         for x_sent in X_valid:
-            x_cat_sent = [f[:4] for f in x_sent]
-            x_num_sent = [f[4:] for f in x_sent]
+            x_cat_sent = [f[:8] for f in x_sent]
+            x_num_sent = [f[8:] for f in x_sent]
             x_cat.extend(x_cat_sent)
             x_num.extend(x_num_sent)
         # One hot encoder to turn categorical variables to binary
