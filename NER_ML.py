@@ -18,7 +18,7 @@ LABELS = ["B-drug", "I-drug", "B-drug_n", "I-drug_n", "B-brand", "I-brand",
           "B-group", "I-group", "O"]
 # Global variables to control script flow
 tmp_path = "data/tmp"
-model = "CRF"
+model = "RandomForest"
 # Assign output file for entities
 if not path_exists(tmp_path):
     makedirs(tmp_path)
@@ -332,8 +332,8 @@ def learner(model, feature_input, output_fn):
         x_num = []
         y = []
         for x_sent, y_sent in zip(X_train, Y_train):
-            x_cat_sent = [f[:3] for f in x_sent]
-            x_num_sent = [f[3:] for f in x_sent]
+            x_cat_sent = [f[:6] for f in x_sent]
+            x_num_sent = [f[6:] for f in x_sent]
             x_cat.extend(x_cat_sent)
             x_num.extend(x_num_sent)
             y.extend(y_sent)
@@ -386,8 +386,8 @@ def classifier(model, feature_input, model_input, outputfile):
         x_cat = []
         x_num = []
         for x_sent in X_valid:
-            x_cat_sent = [f[:3] for f in x_sent]
-            x_num_sent = [f[3:] for f in x_sent]
+            x_cat_sent = [f[:6] for f in x_sent]
+            x_num_sent = [f[6:] for f in x_sent]
             x_cat.extend(x_cat_sent)
             x_num.extend(x_num_sent)
         # One hot encoder to turn categorical variables to binary
