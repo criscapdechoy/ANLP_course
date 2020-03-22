@@ -7,7 +7,7 @@ from re import sub, match
 from xml.dom.minidom import parse
 import os
 # Global variables to control script flow
-input_default_path = "data/Test-NER"
+input_default_path = "data/Devel"
 tmp_path = "data/tmp"
 output_default_path = f"{tmp_path}/task9.1_BASELINE_1.txt"
 
@@ -113,49 +113,44 @@ def extract_entities(token_list):
             i += 1
         # Detect "XX agents", "XX drugs" and "XX drug" groups
         elif (
-              (nxt_token.lower().find('agent') != -1) or
-              (nxt_token.lower().find('drug') != -1)):
-
+            (nxt_token.lower().find('agent') != -1)
+            or (nxt_token.lower().find('drug') != -1)
+        ):
             type = "group"
             token = f"{token} {nxt_token.lower()}"
             end = nxt_end
             i += 1
         # Detect drug_n with usual suffixes & prefixes
         elif (
-                token.endswith(tuple(drug_n_suffixes)) or
-                token.startswith(tuple(drug_n_prefixes))
-              # Features for Goal 2
-              # Tokens of type drug_n have on average more number of
-              # non-alphanumeric symbols.
-              or sum(w in ["+", "-", "(", ")"] for w in token)
-            ):
+            token.endswith(tuple(drug_n_suffixes))
+            or token.startswith(tuple(drug_n_prefixes))
+            # Features for Goal 2
+            # Tokens of type drug_n have on average more number of
+            # non-alphanumeric symbols.
+            or sum(w in ["+", "-", "(", ")"] for w in token)
+        ):
             type = "drug_n"
         # Detect common brand suffixes & prefixes
         elif (
-              token.endswith(tuple(brand_suffixes)) or
-              token.startswith(tuple(brand_prefixes))
-              # Uppercase brand names
-              # Avoid numerals and acronyms by limiting length
-              or token.isupper() and len(token) > 4
-              ):
+            token.endswith(tuple(brand_suffixes))
+            or token.startswith(tuple(brand_prefixes))
+            # Uppercase brand names
+            # Avoid numerals and acronyms by limiting length
+            or token.isupper() and len(token) > 4
+        ):
             type = "brand"
         # Detect common group suffixes & prefixes
         elif (
-                token.endswith(tuple(group_suffixes)) or
-               token.startswith(tuple(group_prefixes))
-              # Detect plural acronyms i.e. ADs
-            or token.lower().endswith("rs") or
-            token.lower().endswith("es") or
-            token.lower().endswith("ts") or
-            token.lower().endswith("cs") or
-              match(r"[A-Z]+s$", token)):
-
+            token.endswith(tuple(group_suffixes))
+            or token.startswith(tuple(group_prefixes))
+            or match(r"[A-Z]+s$", token)
+        ):
             type = "group"
         # Detect common drug suffixes & prefixes
         elif (
-                token.endswith(tuple(drug_suffixes)) or
-                (token.startswith(tuple(drug_prefixes)))
-            ):
+            token.endswith(tuple(drug_suffixes))
+            or token.startswith(tuple(drug_prefixes))
+        ):
             type = "drug"
         # If type was set, then it's an entity
         if type is not None:
@@ -166,7 +161,6 @@ def extract_entities(token_list):
     return ents
 
 
-''' '''
 def output_entities(id, ents, outf):
     """
     Args:
