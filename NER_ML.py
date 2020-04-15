@@ -31,7 +31,7 @@ valid_features_fn = f"{tmp_path}/ML_valid_features.txt"
 # Model path to save it
 ml_model_fn = f"{tmp_path}/ML_model"
 # Specify local megam file
-megam = "megam_i686.opt"
+megam = "resources/megam_i686.opt"
 # Random forest params
 random_seed = 42
 
