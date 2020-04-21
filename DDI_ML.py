@@ -8,6 +8,7 @@ from nltk.parse.corenlp import CoreNLPDependencyParser
 from os import listdir, system, path, makedirs
 from sklearn.ensemble import RandomForestClassifier
 from sys import exit
+from tqdm import tqdm
 from xml.dom.minidom import parse
 import pickle
 
@@ -19,7 +20,7 @@ tmp_path = "data/tmp"
 if not path.exists(tmp_path):  # Create dir if not exists
     makedirs(tmp_path)
     print(f"[INFO] Created a new folder {tmp_path}")
-model = "RandomForest"
+model = "MaxEnt"
 train_input_fn = "data/Train"
 valid_input_fn = "data/Devel"
 train_features_fn = f"{tmp_path}/DDI_ML_train_features.txt"
@@ -32,6 +33,7 @@ ml_model_fn = f"{tmp_path}/DDI_ML_model"
 megam = "resources/megam_i686.opt"
 
 # Random forest params
+n_estimators = 100
 random_seed = 42
 # Get CoreNLP instance, which need to be running in http://localhost:9000
 DependencyParser = CoreNLPDependencyParser(url="http://localhost:9000")
@@ -94,11 +96,11 @@ def get_entity_node(analysis, entities, entity):
     """
     # Get nodes list
     nodes = [analysis.nodes[k] for k in analysis.nodes]
-    ent = entities[entity]["text"]
+    ents = entities[entity]["text"].split()
     # Capture possible tree nodes containing or that are contained in entity
     possible = sorted(
         [node for node in nodes if node["word"] is not None and
-         (node["word"] in ent or ent in node["word"])],
+         any(ent in node["word"] for ent in ents)],
         key=lambda x: x["head"])
     node = possible[0] if len(possible) else nodes[0]
     return node
@@ -123,6 +125,24 @@ def get_verb_ancestor(analysis, node):
     return node
 
 
+def get_dependency_address(node, dependency):
+    """
+    Get Dependency Address.
+    Function which returns the address of a given dependency for a given node,
+    or a non tractable value -1, which always evaluates to False in the
+    features. To use when extracting features.
+    Args:
+        - node: dictionary with node to look dependencies from.
+        - dependency: string with dependency name to look for in node.
+    Return:
+        - _: string with address of found dependency, or -1 if not found.
+    """
+    dep = node["deps"][dependency]
+    # If dependency exists, return address
+    # If dependency does not exist, return non-value
+    return dep[0] if len(dep) else -1
+
+
 def extract_features(analysis, entities, e1, e2):
     """
     Extract Features.
@@ -142,29 +162,109 @@ def extract_features(analysis, entities, e1, e2):
     # Get entity nodes from tree
     n1 = get_entity_node(analysis, entities, e1)
     n2 = get_entity_node(analysis, entities, e2)
+
     # Get verb ancestor from entities
     v1 = get_verb_ancestor(analysis, n1)
     v2 = get_verb_ancestor(analysis, n2)
 
-    # Binary feature: e1 -conj-> e2
-    e1_conj = n1["deps"]["conj"][0] if len(n1["deps"]["conj"]) else -1
-    e1_conj_e2 = e1_conj == n2["address"]
-    # Binary feature: e1 <-conj- e2
-    e2_conj = n2["deps"]["conj"][0] if len(n2["deps"]["conj"]) else -1
-    e2_conj_e1 = e2_conj == n1["address"]
+    # DDI-type lemmas
+    advise_lemmas = ["administer", "use", "recommend", "consider", "approach",
+                     "avoid", "monitor", "advise", "require", "contraindicate"]
+    effect_lemmas = ["increase", "report", "potentiate", "enhance", "decrease",
+                     "include", "result", "reduce", "occur", "produce"]
+    int_lemmas = ["interact", "suggest", "report", "occur", "interfere",
+                  "identify", "pose"]
+    mechanism_lemmas = ["increase", "decrease", "result", "report", "expect",
+                        "reduce", "inhibit", "show", "interfere", "cause",
+                        "indicate", "demonstrate"]
 
-    # Binary feature: same verb ancestor
-    same_vb = v1["address"] == v2["address"]
+    # Modal verbs
+    modal_vb = ["can", "could", "may", "might", "must", "will", "would",
+                "shall", "should"]
+
+    # Modal verbs present
+    modal_present = any(
+        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
+            and modal in analysis.nodes[n]["lemma"]])
+        for modal in modal_vb
+    )
+
+    # e1<-*-VB == VB-*->e2
+    v1_equal_v2 = v1["address"] == v2["address"]
+    # e1<-*-VB-*>VB-*->e2
+    v1_deps_v2 = [v2["address"]] in v1["deps"].values()
+
+    # e1<-*-VB is part DDI-type lemmas
+    advise_v1 = v1["lemma"] in advise_lemmas
+    effect_v1 = v1["lemma"] in effect_lemmas
+    int_v1 = v1["lemma"] in int_lemmas
+    mechanism_v1 = v1["lemma"] in mechanism_lemmas
+
+    # e2<-*-VB is part DDI-type lemmas
+    advise_v2 = v2["lemma"] in advise_lemmas
+    effect_v2 = v2["lemma"] in effect_lemmas
+    int_v2 = v2["lemma"] in int_lemmas
+    mechanism_v2 = v2["lemma"] in mechanism_lemmas
+
+    # e1 -conj-> e2
+    e1_conj_e2 = get_dependency_address(n1, "conj") == n2["address"]
+
+    # e1 <-dobj-VB
+    # e2 <-nmod-VB
+    # e1 <-dobj-VB-nmod->e2
+    e1_dobj = get_dependency_address(v1, "dobj") == n1["address"]
+    e2_nmod = get_dependency_address(v2, "nmod") == n2["address"]
+    e1_dobj_nmod_e2 = e1_dobj and e2_nmod
+
+    # e1<-conj-x<-dobj-VB
+    # e1<-conj-x<-dobj-VB-nmod->e2
+    x_dobj = get_dependency_address(v1, "dobj")
+    nx = analysis.nodes[x_dobj] if x_dobj != -1 else v1
+    e1_conj_dobj = get_dependency_address(nx, "conj") == n1["address"]
+    e1_conj_dobj_nmod_e2 = e1_conj_dobj and e2_nmod
+
+    #  e2<-nmod-x<-dobj-VB
+    #  e1<-nsubj-VB
+    #  e1<-nsubj-VB-dobj->x-nmod->e2
+    x_dobj = get_dependency_address(v2, "dobj")
+    nx = analysis.nodes[x_dobj] if x_dobj != -1 else v2
+    e2_nmod = get_dependency_address(v2, "nmod") == n2["address"]
+    e1_nsubj = get_dependency_address(v1, "nsubj") == n1["address"]
+    e1_nsubj_dobj_nmod_e2 = e1_nsubj and e2_nmod
+
+    # e1<-nsubjpass-VB-*->e2
+    e1_nsubjpass = get_dependency_address(v1, "nsubjpass") == n1["address"]
+    e1_nsubjpass_e2 = e1_nsubjpass and (v1_equal_v2 or v1_deps_v2)
 
     # TODO: implement more
 
     # Gather variables
     feats = [
-        e1_conj_e2, e2_conj_e1,
-        same_vb
+        modal_present,
+        v1_equal_v2,
+        v1_deps_v2,
+        advise_v1,
+        effect_v1,
+        int_v1,
+        mechanism_v1,
+        advise_v2,
+        effect_v2,
+        int_v2,
+        mechanism_v2,
+        e1_conj_e2,
+        e1_dobj,
+        e2_nmod,
+        e1_dobj_nmod_e2,
+        e1_conj_dobj,
+        e1_conj_dobj_nmod_e2,
+        e2_nmod,
+        e1_nsubj,
+        e1_nsubj_dobj_nmod_e2,
+        e1_nsubjpass,
+        e1_nsubjpass_e2
     ]
-    # Turn boolean to str 1/0
-    feats = [str(int(f)) for f in feats]
+    # Turn boolean to var_i=1/0
+    feats = [f"var_{i}={int(f)}" for i, f in enumerate(feats)]
     return feats
 
 
@@ -223,7 +323,8 @@ def get_features_labels(input):
     for p in pairs:
         ids.append((p[0], p[1], p[2]))
         labels.append(p[3])
-        feat = [int(elem) if elem.isdigit() else elem for elem in p[4:]]
+        feat = [elem.split("=")[1] for elem in p[4:]]
+        feat = [int(elem) if elem.isdigit() else elem for elem in feat]
         feats.append(feat)
     return ids, feats, labels
 
@@ -241,7 +342,7 @@ def build_features(inputdir, outputfile):
     outf = open(outputfile, "w")
     # process each file in directory
     files = listdir(inputdir)
-    for f in files:
+    for f in tqdm(files):
         # Parse XML file
         sentences = parseXML(f"{inputdir}/{f}")
         for s in sentences:
@@ -305,7 +406,8 @@ def learner(model, feature_input, output_fn):
     elif model == "RandomForest":
         _, x, y = get_features_labels(feature_input)
         # Create RF instance
-        model = RandomForestClassifier(random_state=random_seed)
+        model = RandomForestClassifier(n_estimators=n_estimators,
+                                       random_state=random_seed)
         # Train RF instance
         model.fit(x, y)
         # Save model to pickle
