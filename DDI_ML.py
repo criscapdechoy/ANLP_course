@@ -328,10 +328,18 @@ def extract_features(analysis, entities, e1, e2):
     except Exception:
         jaccard_dist = 10
         edit_dist = 10
+    lemma1=str(n1["lemma"])
+    lemma2=str(n1["lemma"])
 
+    tag1=str(n1["tag"])
+    tag2=str(n1["tag"])
+    rel1=str(n1["rel"])
+    rel2=str(n1["rel"])
     # NER features
-    lemma1 = str(n1["lemma"])
-    lemma2 = str(n2["lemma"])
+    su1 = str(n1["lemma"])[-3:]
+    su2 = str(n2["lemma"])[-3:]
+    pre1 = str(n1["lemma"])[:3]
+    pre2 = str(n2["lemma"])[:3]
     # All token in capital letters
     capital1 = lemma1.isupper()
     capital2 = lemma2.isupper()
@@ -339,17 +347,17 @@ def extract_features(analysis, entities, e1, e2):
     b_capital1 = lemma1.isupper()
     b_capital2 = lemma2.isupper()
     # Number of digits in token
-    digits1 = sum(i.isdigit() for i in lemma1)
-    digits2 = sum(i.isdigit() for i in lemma2)
+    digits1 = bool(sum(i.isdigit() for i in lemma1))
+    digits2 = bool(sum(i.isdigit() for i in lemma2))
     # Number of capitals in token
     capitals1 = sum(i.isupper() for i in lemma1)
     capitals2 = sum(i.isupper() for i in lemma2)
     # Number of hyphens in token
-    hyphens1 = sum(['-' == i for i in lemma1])
-    hyphens2 = sum(['-' == i for i in lemma2])
+    hyphens1 = bool(sum(['-' == i for i in lemma1]))
+    hyphens2 = bool(sum(['-' == i for i in lemma2]))
     # Number of symbols in token
-    symbols1 = len(re.findall(r'[()+-]', lemma1))
-    symbols2 = len(re.findall(r'[()+-]', lemma2))
+    symbols1 = bool(len(re.findall(r'[()+-]', lemma1)))
+    symbols2 = bool(len(re.findall(r'[()+-]', lemma2)))
     # Token length
     length1 = len(lemma1)
     # Token length
@@ -365,41 +373,55 @@ def extract_features(analysis, entities, e1, e2):
         mechanism_present,
         v1_equal_v2,
         v1_deps_v2,
-        advise_v1,
-        effect_v1,
-        int_v1,
-        mechanism_v1,
-        advise_v2,
-        effect_v2,
-        int_v2,
-        mechanism_v2,
-        e1_dep,
-        e2_dep,
-        common_tag,
-        common_dist_e1,
-        common_dist_e2,
-        e1_conj_e2,
-        e1_dobj_nmod_e2,
-        e1_conj_dobj,
-        e1_conj_dobj_nmod_e2,
-        e1_nsubj_dobj_nmod_e2,
-        e1_nsubjpass_e2,
-        jaccard_dist,
-        edit_dist,
+        # advise_v1,
+        # effect_v1,
+        # int_v1,
+        # mechanism_v1,
+        # advise_v2,
+        # effect_v2,
+        # int_v2,
+        # mechanism_v2,
+        # e1_dep,
+        # e2_dep,
+        # e1_conj_e2,
+        # e1_dobj,
+        # e2_nmod,
+        # e1_dobj_nmod_e2,
+        # e1_conj_dobj,
+        # e1_conj_dobj_nmod_e2,
+        # e2_nmod,
+        # e1_nsubj,
+        # e1_nsubj_dobj_nmod_e2,
+        # e1_nsubjpass,
+        # e1_nsubjpass_e2,
+        # jaccard_dist,
+        # edit_dist,
         capital1,
         b_capital1,
-        capitals1,
+        # capitals1,
         digits1,
         hyphens1,
         symbols1,
-        length1,
+        # length1,
         capital2,
         b_capital2,
-        capitals2,
+        # capitals2,
         digits2,
         hyphens2,
         symbols2,
-        length2
+        # length2,
+        rel1,
+        rel2,
+        su1,
+        su2,
+        pre1,
+        pre2,
+        tag1,
+        tag2,
+        # common,
+        common_dist_e1,
+        common_dist_e2,
+        common_tag
         ]
     # Turn boolean to var_i=1/0
     feats = [f"var_{i}={f}" for i, f in enumerate(feats)]
