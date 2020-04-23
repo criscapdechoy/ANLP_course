@@ -225,12 +225,19 @@ def extract_features(analysis, entities, e1, e2):
     mechanism_lemmas = ["increase", "decrease", "result", "report", "expect",
                         "reduce", "inhibit", "show", "interfere", "cause",
                         "indicate", "demonstrate"]
+    # Mix lemmas
+    mix_lemmas = list(set(
+        advise_lemmas+effect_lemmas+int_lemmas+mechanism_lemmas))
+
     # Modal verbs
     modal_vb = ["can", "could", "may", "might", "must", "will", "would",
                 "shall", "should"]
 
     # Modal verb present
     modal_present = check_lemmas(analysis, modal_vb)
+
+    # Any lemma present
+    lemma_present = check_lemmas(analysis, mix_lemmas)
 
     # Advise lemma present
     advise_present = check_lemmas(analysis, advise_lemmas)
@@ -345,6 +352,7 @@ def extract_features(analysis, entities, e1, e2):
     # Gather variables
     feats = [
         modal_present,
+        lemma_present,
         advise_present,
         effect_present,
         int_present,
