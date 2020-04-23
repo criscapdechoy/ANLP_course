@@ -6,23 +6,23 @@ detect Drug-Drug Interaction.
 # !/usr/bin/python3
 from nltk.parse.corenlp import CoreNLPDependencyParser
 from os import listdir, system, path, makedirs
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import OneHotEncoder
 from sys import exit
 from tqdm import tqdm
 from xml.dom.minidom import parse
 import pickle
 import re
-import numpy as np
 from nltk import jaccard_distance, edit_distance
 # Reference constants
-MODELS = ["MaxEnt", "RandomForest"]
+MODELS = ["MaxEnt", "MLP"]
 
 # Global variables and procedures
 tmp_path = "data/tmp"
 if not path.exists(tmp_path):  # Create dir if not exists
     makedirs(tmp_path)
     print(f"[INFO] Created a new folder {tmp_path}")
-model = "RandomForest"
+model = "MLP"
 train_input_fn = "data/Train"
 valid_input_fn = "data/Devel"
 train_features_fn = f"{tmp_path}/DDI_ML_train_features.txt"
@@ -34,9 +34,14 @@ ml_model_fn = f"{tmp_path}/DDI_ML_model"
 # Specify local megam file
 megam = "resources/megam_i686.opt"
 
-# Random forest params
-n_estimators = 100
-random_seed = 42
+# MLP params
+hidden_layer_sizes = (20,)
+activation = "relu"
+solver = "adam"
+n_epochs = 50
+random_seed = 23
+verbose = False
+
 # Get CoreNLP instance, which need to be running in http://localhost:9000
 DependencyParser = CoreNLPDependencyParser(url="http://localhost:9000")
 StanfordCoreNLPServer_error = (
@@ -145,6 +150,46 @@ def get_dependency_address(node, dependency):
     return dep[0] if len(dep) else -1
 
 
+def get_head_dependency(analysis, node):
+    """
+    Get Head Dependency.
+    Functions which inspects the given node's head and returns the relation
+    dependency ties it to the node, or None if not found.
+    Args:
+        - analysis: DependencyTree object instance with sentence analysis.
+        - node: dictionary with node to start from.
+    Returns:
+        - dependency: string with dependency tag or None
+    """
+    address = node["address"]
+    head = analysis.nodes[node["head"]]
+    dependency = None
+    if len(head["deps"]):
+        deps = [k for k, v in head["deps"].items()
+                if len(v) and v[0] == address]
+        dependency = deps[0] if len(deps) else None
+    return dependency
+
+
+def check_lemmas(analysis, lemmas):
+    """
+    Check Lemmas.
+    Function which checks if the words in the sentence contain the given
+    lemmas. Then returns the tree-higher encountered lemma, or None if none
+    found.
+    Args:
+        - analysis: DependencyTree object instance with sentence analysis.
+        - lemmas: list of strings with lemmas to check.
+    Returns:
+        - _: string with present lemma or None.
+    """
+    nds = analysis.nodes
+    present = [nds[n] for n in nds
+               if (nds[n]["word"] is not None and nds[n]["lemma"] in lemmas)]
+    present = sorted(present, key=lambda x: x["head"])
+    return present[0]["lemma"] if len(present) else None
+
+
 def extract_features(analysis, entities, e1, e2):
     """
     Extract Features.
@@ -173,77 +218,51 @@ def extract_features(analysis, entities, e1, e2):
     advise_lemmas = ["administer", "use", "recommend", "consider", "approach",
                      "avoid", "monitor", "advise", "require", "contraindicate"]
     effect_lemmas = ["increase", "report", "potentiate", "enhance", "decrease",
-                     "include", "result", "reduce", "occur", "produce"]
+                     "include", "result", "reduce", "occur", "produce",
+                     "prevent", "effect"]
     int_lemmas = ["interact", "suggest", "report", "occur", "interfere",
                   "identify", "pose"]
     mechanism_lemmas = ["increase", "decrease", "result", "report", "expect",
                         "reduce", "inhibit", "show", "interfere", "cause",
                         "indicate", "demonstrate"]
-    effect_lemmas = ["produce", "administer", "potentiate", "prevent", "effect"]
-    int_lemmas = ["interact", "interaction"]
-    mechanism_lemmas = ["reduce", "increase", "decrease"]
-
-
-
-    mix_lemmas = np.unique(advise_lemmas+effect_lemmas+int_lemmas+mechanism_lemmas)
     # Modal verbs
     modal_vb = ["can", "could", "may", "might", "must", "will", "would",
                 "shall", "should"]
 
-    # modal verbs present
-    verb_present = any(
-        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
-            and modal in analysis.nodes[n]["lemma"]])
-        for modal in modal_vb
-    )
+    # Modal verb present
+    modal_present = check_lemmas(analysis, modal_vb)
 
-    modal_present = any(
-        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
-            and modal in analysis.nodes[n]["lemma"]])
-        for modal in mix_lemmas
-    )
+    # Advise lemma present
+    advise_present = check_lemmas(analysis, advise_lemmas)
 
-    # effect_lemmas verbs present
-    effect_present = any(
-        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
-            and modal in analysis.nodes[n]["lemma"]])
-        for modal in effect_lemmas
-    )
+    # Effect lemma present
+    effect_present = check_lemmas(analysis, effect_lemmas)
 
-    # mechanism_lemmas verbs present
-    mechanism_present = any(
-        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
-            and modal in analysis.nodes[n]["lemma"]])
-        for modal in mechanism_lemmas
-    )
-    # int_lemmas verbs present
-    int_present = any(
-        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
-            and modal in analysis.nodes[n]["lemma"]])
-        for modal in int_lemmas
-    )
-    # advise_lemmas verbs present
-    advise_present = any(
-        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
-            and modal in analysis.nodes[n]["lemma"]])
-        for modal in advise_lemmas
-    )
+    # Interaction lemma present
+    int_present = check_lemmas(analysis, int_lemmas)
+
+    # Mechanism lemma present
+    mechanism_present = check_lemmas(analysis, effect_lemmas)
+
     # e1<-*-VB == VB-*->e2
     v1_equal_v2 = v1["address"] == v2["address"]
     # e1<-*-VB-*>VB-*->e2
     v1_deps_v2 = [v2["address"]] in v1["deps"].values()
 
     # e1<-*-VB is part DDI-type lemmas
-    advise_v1 = v1["lemma"] in advise_lemmas
-    effect_v1 = v1["lemma"] in effect_lemmas
-    int_v1 = v1["lemma"] in int_lemmas
-    mechanism_v1 = v1["lemma"] in mechanism_lemmas
-
+    advise_v1 = v1["lemma"] if v1["lemma"] in advise_lemmas else None
+    effect_v1 = v1["lemma"] if v1["lemma"] in effect_lemmas else None
+    int_v1 = v1["lemma"] if v1["lemma"] in int_lemmas else None
+    mechanism_v1 = v1["lemma"] if v1["lemma"] in mechanism_lemmas else None
     # e2<-*-VB is part DDI-type lemmas
-    advise_v2 = v2["lemma"] in advise_lemmas
-    effect_v2 = v2["lemma"] in effect_lemmas
-    int_v2 = v2["lemma"] in int_lemmas
-    mechanism_v2 = v2["lemma"] in mechanism_lemmas
+    advise_v2 = v2["lemma"] if v2["lemma"] in advise_lemmas else None
+    effect_v2 = v2["lemma"] if v2["lemma"] in effect_lemmas else None
+    int_v2 = v2["lemma"] if v2["lemma"] in int_lemmas else None
+    mechanism_v2 = v2["lemma"] if v2["lemma"] in mechanism_lemmas else None
+
+    # Get head dependencies
+    e1_dep = get_head_dependency(analysis, n1)
+    e2_dep = get_head_dependency(analysis, n2)
 
     # e1 -conj-> e2
     e1_conj_e2 = get_dependency_address(n1, "conj") == n2["address"]
@@ -275,23 +294,25 @@ def extract_features(analysis, entities, e1, e2):
     e1_nsubjpass = get_dependency_address(v1, "nsubjpass") == n1["address"]
     e1_nsubjpass_e2 = e1_nsubjpass and (v1_equal_v2 or v1_deps_v2)
 
-    # Get Rel
-    rel1=n1["rel"]
-    rel2=n2["rel"]
+    # # Get Rel
+    # rel1 = n1["rel"]
+    # rel2 = n2["rel"]
 
     # Get num of Tags with NN in the sentence
     # tagNNnum=sum(
-    #     len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
+    #     len([n for n in analysis.nodes
+    #          if analysis.nodes[n]["word"] is not None
     #          and modal in analysis.nodes[n]["lemma"]])
     #     for modal in set('NN'))
 
     # Jackard dist and Edit dist
     try:
-        jaccard_dist = round(jaccard_distance(set(n1["lemma"]), set(n2["lemma"]))*10,0)
+        jaccard_dist = round(jaccard_distance(set(n1["lemma"]),
+                             set(n2["lemma"]))*10, 0)
         edit_dist = edit_distance(n1["lemma"], n2["lemma"])
-        edit_dist = round(edit_dist*10 / (1+edit_dist),0)
+        edit_dist = round(edit_dist*10 / (1+edit_dist), 0)
 
-    except:
+    except Exception:
         jaccard_dist = 10
         edit_dist = 10
 
@@ -327,7 +348,6 @@ def extract_features(analysis, entities, e1, e2):
         advise_present,
         effect_present,
         int_present,
-        verb_present,
         mechanism_present,
         v1_equal_v2,
         v1_deps_v2,
@@ -339,6 +359,8 @@ def extract_features(analysis, entities, e1, e2):
         effect_v2,
         int_v2,
         mechanism_v2,
+        e1_dep,
+        e2_dep,
         e1_conj_e2,
         e1_dobj,
         e2_nmod,
@@ -368,7 +390,7 @@ def extract_features(analysis, entities, e1, e2):
         length2,
         ]
     # Turn boolean to var_i=1/0
-    feats = [f"var_{i}={int(f)}" for i, f in enumerate(feats)]
+    feats = [f"var_{i}={f}" for i, f in enumerate(feats)]
     return feats
 
 
@@ -507,16 +529,25 @@ def learner(model, feature_input, output_fn):
         system(f"./{megam} -quiet -nc -nobias multiclass \
             {megam_features} > {megam_model}")
 
-    elif model == "RandomForest":
-        _, x, y = get_features_labels(feature_input)
+    elif model == "MLP":
+        _, x_cat, y = get_features_labels(feature_input)
+        # OneHotEncode variables
+        encoder = OneHotEncoder(handle_unknown="ignore")
+        encoder.fit(x_cat)
+        x = encoder.transform(x_cat).toarray()
         # Create RF instance
-        model = RandomForestClassifier(n_estimators=n_estimators,
-                                       random_state=random_seed)
+        model = MLPClassifier(
+            hidden_layer_sizes=hidden_layer_sizes,
+            activation=activation,
+            solver=solver,
+            max_iter=n_epochs,
+            random_state=random_seed,
+            verbose=verbose)
         # Train RF instance
         model.fit(x, y)
         # Save model to pickle
         with open(f"{output_fn}.randomForest", "wb") as fp:
-            pickle.dump(model, fp)
+            pickle.dump([model, encoder], fp)
 
     else:
         print(f"[ERROR] Model {model} not implemented")
@@ -549,12 +580,14 @@ def classifier(model, feature_input, model_input, outputfile):
             lines = fp.readlines()
         predictions = [line.split("\t")[0] for line in lines]
 
-    elif model == "RandomForest":
+    elif model == "MLP":
         # Retrieve model
         with open(f"{model_input}.randomForest", "rb") as fp:
-            model = pickle.load(fp)
+            model, encoder = pickle.load(fp)
+        # OneHotEncode variables
+        x_ = encoder.transform(x).toarray()
         # Predict classes
-        predictions = model.predict(x)
+        predictions = model.predict(x_)
 
     else:
         print(f"[ERROR] Model {model} not implemented")
