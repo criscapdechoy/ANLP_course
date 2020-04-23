@@ -179,9 +179,9 @@ def extract_features(analysis, entities, e1, e2):
     mechanism_lemmas = ["increase", "decrease", "result", "report", "expect",
                         "reduce", "inhibit", "show", "interfere", "cause",
                         "indicate", "demonstrate"]
-    effect_lemmas = ["produce", "administer", "potentiate", "prevent", "effect"]
-    int_lemmas = ["interact", "interaction"]
-    mechanism_lemmas = ["reduce", "increase", "decrease"]
+    # effect_lemmas = ["produce", "administer", "potentiate", "prevent", "effect"]
+    # int_lemmas = ["interact", "interaction"]
+    # mechanism_lemmas = ["reduce", "increase", "decrease"]
 
 
 
