@@ -11,7 +11,9 @@ from sys import exit
 from tqdm import tqdm
 from xml.dom.minidom import parse
 import pickle
-
+import re
+import numpy as np
+from nltk import jaccard_distance, edit_distance
 # Reference constants
 MODELS = ["MaxEnt", "RandomForest"]
 
@@ -20,7 +22,7 @@ tmp_path = "data/tmp"
 if not path.exists(tmp_path):  # Create dir if not exists
     makedirs(tmp_path)
     print(f"[INFO] Created a new folder {tmp_path}")
-model = "MaxEnt"
+model = "RandomForest"
 train_input_fn = "data/Train"
 valid_input_fn = "data/Devel"
 train_features_fn = f"{tmp_path}/DDI_ML_train_features.txt"
@@ -150,7 +152,7 @@ def extract_features(analysis, entities, e1, e2):
     present in the sentence, and the ids of the two target entities and returns
     a list of features to pass to a ML model to predict DDI.
     Args:
-        - analysis: DependencyGraph object instance with setnence parsed
+        - analysis: DependencyGraph object instance with sentence parsed
             information.
         - entities: dictionary of entities indexed by id with offset as value.
         - e1: string with id of the first entity to consider.
@@ -177,18 +179,55 @@ def extract_features(analysis, entities, e1, e2):
     mechanism_lemmas = ["increase", "decrease", "result", "report", "expect",
                         "reduce", "inhibit", "show", "interfere", "cause",
                         "indicate", "demonstrate"]
+    effect_lemmas = ["produce", "administer", "potentiate", "prevent", "effect"]
+    int_lemmas = ["interact", "interaction"]
+    mechanism_lemmas = ["reduce", "increase", "decrease"]
 
+
+
+    mix_lemmas = np.unique(advise_lemmas+effect_lemmas+int_lemmas+mechanism_lemmas)
     # Modal verbs
     modal_vb = ["can", "could", "may", "might", "must", "will", "would",
                 "shall", "should"]
 
-    # Modal verbs present
-    modal_present = any(
+    # modal verbs present
+    verb_present = any(
         len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
             and modal in analysis.nodes[n]["lemma"]])
         for modal in modal_vb
     )
 
+    modal_present = any(
+        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
+            and modal in analysis.nodes[n]["lemma"]])
+        for modal in mix_lemmas
+    )
+
+    # effect_lemmas verbs present
+    effect_present = any(
+        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
+            and modal in analysis.nodes[n]["lemma"]])
+        for modal in effect_lemmas
+    )
+
+    # mechanism_lemmas verbs present
+    mechanism_present = any(
+        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
+            and modal in analysis.nodes[n]["lemma"]])
+        for modal in mechanism_lemmas
+    )
+    # int_lemmas verbs present
+    int_present = any(
+        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
+            and modal in analysis.nodes[n]["lemma"]])
+        for modal in int_lemmas
+    )
+    # advise_lemmas verbs present
+    advise_present = any(
+        len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
+            and modal in analysis.nodes[n]["lemma"]])
+        for modal in advise_lemmas
+    )
     # e1<-*-VB == VB-*->e2
     v1_equal_v2 = v1["address"] == v2["address"]
     # e1<-*-VB-*>VB-*->e2
@@ -236,11 +275,60 @@ def extract_features(analysis, entities, e1, e2):
     e1_nsubjpass = get_dependency_address(v1, "nsubjpass") == n1["address"]
     e1_nsubjpass_e2 = e1_nsubjpass and (v1_equal_v2 or v1_deps_v2)
 
-    # TODO: implement more
+    # Get Rel
+    rel1=n1["rel"]
+    rel2=n2["rel"]
+
+    # Get num of Tags with NN in the sentence
+    # tagNNnum=sum(
+    #     len([n for n in analysis.nodes if analysis.nodes[n]["word"] is not None
+    #          and modal in analysis.nodes[n]["lemma"]])
+    #     for modal in set('NN'))
+
+    # Jackard dist and Edit dist
+    try:
+        jaccard_dist = round(jaccard_distance(set(n1["lemma"]), set(n2["lemma"]))*10,0)
+        edit_dist = edit_distance(n1["lemma"], n2["lemma"])
+        edit_dist = round(edit_dist*10 / (1+edit_dist),0)
+
+    except:
+        jaccard_dist = 10
+        edit_dist = 10
+
+    # NER features
+    lemma1 = str(n1["lemma"])
+    lemma2 = str(n2["lemma"])
+    # All token in capital letters
+    capital1 = lemma1.isupper()
+    capital2 = lemma2.isupper()
+    # Begin with capital letter
+    b_capital1 = lemma1.isupper()
+    b_capital2 = lemma2.isupper()
+    # Number of digits in token
+    digits1 = sum(i.isdigit() for i in lemma1)
+    digits2 = sum(i.isdigit() for i in lemma2)
+    # Number of capitals in token
+    capitals1 = sum(i.isupper() for i in lemma1)
+    capitals2 = sum(i.isupper() for i in lemma2)
+    # Number of hyphens in token
+    hyphens1 = sum(['-' == i for i in lemma1])
+    hyphens2 = sum(['-' == i for i in lemma2])
+    # Number of symbols in token
+    symbols1 = len(re.findall(r'[()+-]', lemma1))
+    symbols2 = len(re.findall(r'[()+-]', lemma2))
+    # Token length
+    length1 = len(lemma1)
+    # Token length
+    length2 = len(lemma2)
 
     # Gather variables
     feats = [
         modal_present,
+        advise_present,
+        effect_present,
+        int_present,
+        verb_present,
+        mechanism_present,
         v1_equal_v2,
         v1_deps_v2,
         advise_v1,
@@ -261,8 +349,24 @@ def extract_features(analysis, entities, e1, e2):
         e1_nsubj,
         e1_nsubj_dobj_nmod_e2,
         e1_nsubjpass,
-        e1_nsubjpass_e2
-    ]
+        e1_nsubjpass_e2,
+        jaccard_dist,
+        edit_dist,
+        capital1,
+        b_capital1,
+        capitals1,
+        digits1,
+        hyphens1,
+        symbols1,
+        length1,
+        capital2,
+        b_capital2,
+        capitals2,
+        digits2,
+        hyphens2,
+        symbols2,
+        length2,
+        ]
     # Turn boolean to var_i=1/0
     feats = [f"var_{i}={int(f)}" for i, f in enumerate(feats)]
     return feats
@@ -497,7 +601,7 @@ def main(model, train_input_fn, valid_input_fn, train_features_fn,
     build_features(valid_input_fn, valid_features_fn)
     # Predict validation
     classifier(model, valid_features_fn, ml_model_fn, outputfile)
-    # Evaluate prediciton
+    # Evaluate prediction
     evaluate(valid_input_fn, outputfile)
 
 
