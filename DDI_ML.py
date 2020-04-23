@@ -154,7 +154,7 @@ def get_head_dependency(analysis, node):
     """
     Get Head Dependency.
     Functions which inspects the given node's head and returns the relation
-    dependency ties it to the node, or None if not found.
+    dependency ties it to the node, or "null" if not found.
     Args:
         - analysis: DependencyTree object instance with sentence analysis.
         - node: dictionary with node to start from.
@@ -163,11 +163,11 @@ def get_head_dependency(analysis, node):
     """
     address = node["address"]
     head = analysis.nodes[node["head"]]
-    dependency = None
+    dependency = "null"
     if len(head["deps"]):
         deps = [k for k, v in head["deps"].items()
                 if len(v) and v[0] == address]
-        dependency = deps[0] if len(deps) else None
+        dependency = deps[0] if len(deps) else "null"
     return dependency
 
 
@@ -175,7 +175,7 @@ def check_lemmas(analysis, lemmas):
     """
     Check Lemmas.
     Function which checks if the words in the sentence contain the given
-    lemmas. Then returns the tree-higher encountered lemma, or None if none
+    lemmas. Then returns the tree-higher encountered lemma, or "null" if none
     found.
     Args:
         - analysis: DependencyTree object instance with sentence analysis.
@@ -187,7 +187,25 @@ def check_lemmas(analysis, lemmas):
     present = [nds[n] for n in nds
                if (nds[n]["word"] is not None and nds[n]["lemma"] in lemmas)]
     present = sorted(present, key=lambda x: x["head"])
-    return present[0]["lemma"] if len(present) else None
+    return present[0]["lemma"] if len(present) else "null"
+
+
+def get_ancestors(analysis, node):
+    """
+    Get Ancestors.
+    Function which returns the given node's ancestor nodes.
+    Args:
+        - analysis: DependencyTree object instance with sentence analysis.
+        - node: dictionary with node to start from.
+    Return:
+        - node: dictionary with verb antecessor node from DependencyTree.
+    """
+    ancs = []
+    nds = analysis.nodes
+    while node["tag"] and node["tag"] != "TOP":
+        node = nds[node["head"]]
+        ancs.append(node)
+    return ancs
 
 
 def extract_features(analysis, entities, e1, e2):
@@ -214,6 +232,10 @@ def extract_features(analysis, entities, e1, e2):
     v1 = get_verb_ancestor(analysis, n1)
     v2 = get_verb_ancestor(analysis, n2)
 
+    # Get ancestors
+    ance1 = get_ancestors(analysis, n1)
+    ance2 = get_ancestors(analysis, n2)
+
     # DDI-type lemmas
     advise_lemmas = ["administer", "use", "recommend", "consider", "approach",
                      "avoid", "monitor", "advise", "require", "contraindicate"]
@@ -228,27 +250,16 @@ def extract_features(analysis, entities, e1, e2):
     # Mix lemmas
     mix_lemmas = list(set(
         advise_lemmas+effect_lemmas+int_lemmas+mechanism_lemmas))
-
     # Modal verbs
     modal_vb = ["can", "could", "may", "might", "must", "will", "would",
                 "shall", "should"]
 
-    # Modal verb present
+    # Modal verbs and DDI-type lemmas present
     modal_present = check_lemmas(analysis, modal_vb)
-
-    # Any lemma present
     lemma_present = check_lemmas(analysis, mix_lemmas)
-
-    # Advise lemma present
     advise_present = check_lemmas(analysis, advise_lemmas)
-
-    # Effect lemma present
     effect_present = check_lemmas(analysis, effect_lemmas)
-
-    # Interaction lemma present
     int_present = check_lemmas(analysis, int_lemmas)
-
-    # Mechanism lemma present
     mechanism_present = check_lemmas(analysis, effect_lemmas)
 
     # e1<-*-VB == VB-*->e2
@@ -257,19 +268,25 @@ def extract_features(analysis, entities, e1, e2):
     v1_deps_v2 = [v2["address"]] in v1["deps"].values()
 
     # e1<-*-VB is part DDI-type lemmas
-    advise_v1 = v1["lemma"] if v1["lemma"] in advise_lemmas else None
-    effect_v1 = v1["lemma"] if v1["lemma"] in effect_lemmas else None
-    int_v1 = v1["lemma"] if v1["lemma"] in int_lemmas else None
-    mechanism_v1 = v1["lemma"] if v1["lemma"] in mechanism_lemmas else None
+    advise_v1 = v1["lemma"] if v1["lemma"] in advise_lemmas else "null"
+    effect_v1 = v1["lemma"] if v1["lemma"] in effect_lemmas else "null"
+    int_v1 = v1["lemma"] if v1["lemma"] in int_lemmas else "null"
+    mechanism_v1 = v1["lemma"] if v1["lemma"] in mechanism_lemmas else "null"
     # e2<-*-VB is part DDI-type lemmas
-    advise_v2 = v2["lemma"] if v2["lemma"] in advise_lemmas else None
-    effect_v2 = v2["lemma"] if v2["lemma"] in effect_lemmas else None
-    int_v2 = v2["lemma"] if v2["lemma"] in int_lemmas else None
-    mechanism_v2 = v2["lemma"] if v2["lemma"] in mechanism_lemmas else None
+    advise_v2 = v2["lemma"] if v2["lemma"] in advise_lemmas else "null"
+    effect_v2 = v2["lemma"] if v2["lemma"] in effect_lemmas else "null"
+    int_v2 = v2["lemma"] if v2["lemma"] in int_lemmas else "null"
+    mechanism_v2 = v2["lemma"] if v2["lemma"] in mechanism_lemmas else "null"
 
     # Get head dependencies
     e1_dep = get_head_dependency(analysis, n1)
     e2_dep = get_head_dependency(analysis, n2)
+
+    # Common ancestor features
+    common = [n for n in ance1 if n in ance2]
+    common_tag = common[0]["tag"] if len(common) else "null"
+    common_dist_e1 = ance1.index(common[0])+1 if len(common) else 99
+    common_dist_e2 = ance2.index(common[0])+1 if len(common) else 99
 
     # e1 -conj-> e2
     e1_conj_e2 = get_dependency_address(n1, "conj") == n2["address"]
@@ -300,17 +317,6 @@ def extract_features(analysis, entities, e1, e2):
     # e1<-nsubjpass-VB-*->e2
     e1_nsubjpass = get_dependency_address(v1, "nsubjpass") == n1["address"]
     e1_nsubjpass_e2 = e1_nsubjpass and (v1_equal_v2 or v1_deps_v2)
-
-    # # Get Rel
-    # rel1 = n1["rel"]
-    # rel2 = n2["rel"]
-
-    # Get num of Tags with NN in the sentence
-    # tagNNnum=sum(
-    #     len([n for n in analysis.nodes
-    #          if analysis.nodes[n]["word"] is not None
-    #          and modal in analysis.nodes[n]["lemma"]])
-    #     for modal in set('NN'))
 
     # Jackard dist and Edit dist
     try:
@@ -369,16 +375,14 @@ def extract_features(analysis, entities, e1, e2):
         mechanism_v2,
         e1_dep,
         e2_dep,
+        common_tag,
+        common_dist_e1,
+        common_dist_e2,
         e1_conj_e2,
-        e1_dobj,
-        e2_nmod,
         e1_dobj_nmod_e2,
         e1_conj_dobj,
         e1_conj_dobj_nmod_e2,
-        e2_nmod,
-        e1_nsubj,
         e1_nsubj_dobj_nmod_e2,
-        e1_nsubjpass,
         e1_nsubjpass_e2,
         jaccard_dist,
         edit_dist,
@@ -395,7 +399,7 @@ def extract_features(analysis, entities, e1, e2):
         digits2,
         hyphens2,
         symbols2,
-        length2,
+        length2
         ]
     # Turn boolean to var_i=1/0
     feats = [f"var_{i}={f}" for i, f in enumerate(feats)]
@@ -458,7 +462,6 @@ def get_features_labels(input):
         ids.append((p[0], p[1], p[2]))
         labels.append(p[3])
         feat = [elem.split("=")[1] for elem in p[4:]]
-        feat = [int(elem) if elem.isdigit() else elem for elem in feat]
         feats.append(feat)
     return ids, feats, labels
 
