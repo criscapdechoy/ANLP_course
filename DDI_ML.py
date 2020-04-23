@@ -7,6 +7,8 @@ detect Drug-Drug Interaction.
 from nltk.parse.corenlp import CoreNLPDependencyParser
 from os import listdir, system, path, makedirs
 from sklearn.neural_network import MLPClassifier
+from sklearn.svm import SVC
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.preprocessing import OneHotEncoder
 from sys import exit
 from tqdm import tqdm
@@ -15,7 +17,7 @@ import pickle
 import re
 from nltk import jaccard_distance, edit_distance
 # Reference constants
-MODELS = ["MaxEnt", "MLP"]
+MODELS = ["MaxEnt", "MLP", "SVC", "Ada", "GBC"]
 
 # Global variables and procedures
 tmp_path = "data/tmp"
@@ -231,7 +233,6 @@ def extract_features(analysis, entities, e1, e2):
     # Get verb ancestor from entities
     v1 = get_verb_ancestor(analysis, n1)
     v2 = get_verb_ancestor(analysis, n2)
-
     # Get ancestors
     ance1 = get_ancestors(analysis, n1)
     ance2 = get_ancestors(analysis, n2)
@@ -247,12 +248,18 @@ def extract_features(analysis, entities, e1, e2):
     mechanism_lemmas = ["increase", "decrease", "result", "report", "expect",
                         "reduce", "inhibit", "show", "interfere", "cause",
                         "indicate", "demonstrate"]
+
+    # effect_lemmas = ["administered", "concurrently", "concomitantly", "increase", "increases", "increased", "effect",
+    #                 "effects", "prevent", "prevents", "prevented", "potentiate", "potentiates", "potentiated"]
+    # mechanism_lemmas = ["reduce", "reduces", "reduced", "decrease", "decreases", "decreased", "change", "changes",
+    #                    "changed", "elevate", "elevates", "elevated", "interfere", "interferes", "interfered"]
+
     # Mix lemmas
     mix_lemmas = list(set(
         advise_lemmas+effect_lemmas+int_lemmas+mechanism_lemmas))
     # Modal verbs
-    modal_vb = ["can", "could", "may", "might", "must", "will", "would",
-                "shall", "should"]
+    modal_vb = [ "can", "could", "may", "might", "must", "will", "would",
+                 "shall", "should"]
 
     # Modal verbs and DDI-type lemmas present
     modal_present = check_lemmas(analysis, modal_vb)
@@ -279,14 +286,41 @@ def extract_features(analysis, entities, e1, e2):
     mechanism_v2 = v2["lemma"] if v2["lemma"] in mechanism_lemmas else "null"
 
     # Get head dependencies
-    e1_dep = get_head_dependency(analysis, n1)
-    e2_dep = get_head_dependency(analysis, n2)
+    #e1_dep = get_head_dependency(analysis, n1)
+    #e2_dep = get_head_dependency(analysis, n2)
 
     # Common ancestor features
     common = [n for n in ance1 if n in ance2]
     common_tag = common[0]["tag"] if len(common) else "null"
     common_dist_e1 = ance1.index(common[0])+1 if len(common) else 99
     common_dist_e2 = ance2.index(common[0])+1 if len(common) else 99
+    common_dist_sum = common_dist_e1 + common_dist_e2
+    common_rel = common[0]["rel"] if len(common) else "null"
+    common_dist = len(ance1)-ance1.index(common[0]) if len(common) else 99
+    try:
+        child11 = ance1[ance1.index(common[0])-1]['tag']
+    except:
+        child11 = 'null'
+    try:
+        child12 = ance1[ance1.index(common[0])-2]['tag']
+    except:
+        child12 = 'null'
+    try:
+        child13 = ance1[ance1.index(common[0])-3]['tag']
+    except:
+        child13 = 'null'
+    try:
+        child21 = ance2[ance1.index(common[0])-1]['tag']
+    except:
+        child21 = 'null'
+    try:
+        child22 = ance2[ance1.index(common[0])-2]['tag']
+    except:
+        child22 = 'null'
+    try:
+        child23 = ance2[ance1.index(common[0]) - 3]['tag']
+    except:
+        child23 = 'null'
 
     # e1 -conj-> e2
     e1_conj_e2 = get_dependency_address(n1, "conj") == n2["address"]
@@ -336,10 +370,10 @@ def extract_features(analysis, entities, e1, e2):
     rel1=str(n1["rel"])
     rel2=str(n1["rel"])
     # NER features
-    su1 = str(n1["lemma"])[-3:]
-    su2 = str(n2["lemma"])[-3:]
-    pre1 = str(n1["lemma"])[:3]
-    pre2 = str(n2["lemma"])[:3]
+    # su1 = str(n1["lemma"])[-3:]
+    # su2 = str(n2["lemma"])[-3:]
+    # pre1 = str(n1["lemma"])[:3]
+    # pre2 = str(n2["lemma"])[:3]
     # All token in capital letters
     capital1 = lemma1.isupper()
     capital2 = lemma2.isupper()
@@ -373,14 +407,14 @@ def extract_features(analysis, entities, e1, e2):
         mechanism_present,
         v1_equal_v2,
         v1_deps_v2,
-        # advise_v1,
-        # effect_v1,
-        # int_v1,
-        # mechanism_v1,
-        # advise_v2,
-        # effect_v2,
-        # int_v2,
-        # mechanism_v2,
+        advise_v1,
+        effect_v1,
+        int_v1,
+        mechanism_v1,
+        advise_v2,
+        effect_v2,
+        int_v2,
+        mechanism_v2,
         # e1_dep,
         # e2_dep,
         # e1_conj_e2,
@@ -412,16 +446,26 @@ def extract_features(analysis, entities, e1, e2):
         # length2,
         rel1,
         rel2,
-        su1,
-        su2,
-        pre1,
-        pre2,
+        # su1,
+        # su2,
+        # pre1,
+        # pre2,
         tag1,
         tag2,
-        # common,
         common_dist_e1,
         common_dist_e2,
-        common_tag
+        common_tag,
+        common_rel,
+        common_dist,
+        common_dist_sum,
+        child11,
+        child12,
+        child13,
+        child21,
+        child22,
+        child23,
+        common_dist_e1 < common_dist_e2,
+        common_dist_e1 == common_dist_e2,
         ]
     # Turn boolean to var_i=1/0
     feats = [f"var_{i}={f}" for i, f in enumerate(feats)]
@@ -487,6 +531,21 @@ def get_features_labels(input):
         feats.append(feat)
     return ids, feats, labels
 
+
+def address(tree, start_e1, end_e1, start_e2, end_e2):
+    number_node_e1 = None
+    number_node_e2 = None
+
+    # get the element number of the entities
+    for i in range(1, len(tree.nodes)):
+        node = tree.nodes[i]
+        # it's not a bracket
+        if 'start' in node:
+            if node["start"] >= start_e1 and node["end"] <= end_e1 and number_node_e1 is None:
+                number_node_e1 = i
+            elif node["start"] >= start_e2 and node["end"] <= end_e2 and number_node_e2 is None:
+                number_node_e2 = i
+    return number_node_e1, number_node_e2
 
 def build_features(inputdir, outputfile):
     """
@@ -579,7 +638,34 @@ def learner(model, feature_input, output_fn):
         # Train RF instance
         model.fit(x, y)
         # Save model to pickle
-        with open(f"{output_fn}.randomForest", "wb") as fp:
+        with open(f"{output_fn}.MLP", "wb") as fp:
+            pickle.dump([model, encoder], fp)
+
+    elif model == "SVC":
+        _, x_cat, y = get_features_labels(feature_input)
+        # OneHotEncode variables
+        encoder = OneHotEncoder(handle_unknown="ignore")
+        encoder.fit(x_cat)
+        x = encoder.transform(x_cat).toarray()
+        # Create RF instance
+        model = SVC()
+        # Train RF instance
+        model.fit(x, y)
+        # Save model to pickle
+        with open(f"{output_fn}.SVC", "wb") as fp:
+            pickle.dump([model, encoder], fp)
+    elif model == "GBC":
+        _, x_cat, y = get_features_labels(feature_input)
+        # OneHotEncode variables
+        encoder = OneHotEncoder(handle_unknown="ignore")
+        encoder.fit(x_cat)
+        x = encoder.transform(x_cat).toarray()
+        # Create RF instance
+        model = GradientBoostingClassifier()
+        # Train RF instance
+        model.fit(x, y)
+        # Save model to pickle
+        with open(f"{output_fn}.GBC", "wb") as fp:
             pickle.dump([model, encoder], fp)
 
     else:
@@ -615,13 +701,30 @@ def classifier(model, feature_input, model_input, outputfile):
 
     elif model == "MLP":
         # Retrieve model
-        with open(f"{model_input}.randomForest", "rb") as fp:
+        with open(f"{model_input}.MLP", "rb") as fp:
             model, encoder = pickle.load(fp)
         # OneHotEncode variables
         x_ = encoder.transform(x).toarray()
         # Predict classes
         predictions = model.predict(x_)
 
+    elif model == "SVC":
+        # Retrieve model
+        with open(f"{model_input}.SVC", "rb") as fp:
+            model, encoder = pickle.load(fp)
+        # OneHotEncode variables
+        x_ = encoder.transform(x).toarray()
+        # Predict classes
+        predictions = model.predict(x_)
+
+    elif model == "GBC":
+        # Retrieve model
+        with open(f"{model_input}.GBC", "rb") as fp:
+            model, encoder = pickle.load(fp)
+        # OneHotEncode variables
+        x_ = encoder.transform(x).toarray()
+        # Predict classes
+        predictions = model.predict(x_)
     else:
         print(f"[ERROR] Model {model} not implemented")
         raise NotImplementedError
