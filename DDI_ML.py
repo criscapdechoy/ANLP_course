@@ -17,32 +17,44 @@ import pickle
 import re
 from nltk import jaccard_distance, edit_distance
 # Reference constants
-MODELS = ["MaxEnt", "MLP", "SVC", "Ada", "GBC"]
+MODELS = ["MaxEnt", "MLP", "SVC", "GBC"]
 
 # Global variables and procedures
 tmp_path = "data/tmp"
 if not path.exists(tmp_path):  # Create dir if not exists
     makedirs(tmp_path)
     print(f"[INFO] Created a new folder {tmp_path}")
-model = "MLP"
+model = "MaxEnt"
+# model = "MLP"
+# model = "SVC"
+# model = "GBC"
 train_input_fn = "data/Train"
 valid_input_fn = "data/Devel"
+# valid_input_fn = "data/Test-DDI"
 train_features_fn = f"{tmp_path}/DDI_ML_train_features.txt"
 valid_features_fn = f"{tmp_path}/DDI_ML_valid_features.txt"
-outputfile = f"{tmp_path}/task9.2_ML_1.txt"
+# valid_features_fn = f"{tmp_path}/DDI_ML_test_features.txt"
+outputfile = f"{tmp_path}/task9.2_ML{model}_1.txt"
 
 # Model path to save it
 ml_model_fn = f"{tmp_path}/DDI_ML_model"
 # Specify local megam file
 megam = "resources/megam_i686.opt"
 
+random_seed = 23
+# MaxEnt params
+# feat_col = "4-"
+# feat_col = "4-10,17-27,32,34-46,49,53,58,61-65"  # 0.3806
+# feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76"  # 0.382
+feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76"  # 0.382
 # MLP params
-hidden_layer_sizes = (20,)
+hidden_layer_sizes = (60,)
 activation = "relu"
 solver = "adam"
-n_epochs = 50
-random_seed = 23
+n_epochs = 30
 verbose = False
+# GBC params
+n_estimators = 50
 
 # Get CoreNLP instance, which need to be running in http://localhost:9000
 DependencyParser = CoreNLPDependencyParser(url="http://localhost:9000")
@@ -152,27 +164,6 @@ def get_dependency_address(node, dependency):
     return dep[0] if len(dep) else -1
 
 
-def get_head_dependency(analysis, node):
-    """
-    Get Head Dependency.
-    Functions which inspects the given node's head and returns the relation
-    dependency ties it to the node, or "null" if not found.
-    Args:
-        - analysis: DependencyTree object instance with sentence analysis.
-        - node: dictionary with node to start from.
-    Returns:
-        - dependency: string with dependency tag or None
-    """
-    address = node["address"]
-    head = analysis.nodes[node["head"]]
-    dependency = "null"
-    if len(head["deps"]):
-        deps = [k for k, v in head["deps"].items()
-                if len(v) and v[0] == address]
-        dependency = deps[0] if len(deps) else "null"
-    return dependency
-
-
 def check_lemmas(analysis, lemmas):
     """
     Check Lemmas.
@@ -205,8 +196,8 @@ def get_ancestors(analysis, node):
     ancs = []
     nds = analysis.nodes
     while node["tag"] and node["tag"] != "TOP":
-        node = nds[node["head"]]
         ancs.append(node)
+        node = nds[node["head"]]
     return ancs
 
 
@@ -226,6 +217,7 @@ def extract_features(analysis, entities, e1, e2):
         - feats: list of features extracted from the tree and e1, e2.
     """
     feats = []
+
     # Get entity nodes from tree
     n1 = get_entity_node(analysis, entities, e1)
     n2 = get_entity_node(analysis, entities, e2)
@@ -233,11 +225,14 @@ def extract_features(analysis, entities, e1, e2):
     # Get verb ancestor from entities
     v1 = get_verb_ancestor(analysis, n1)
     v2 = get_verb_ancestor(analysis, n2)
-    # Get ancestors
+
+    # Get ancestors nodes list for entity nodes and verb nodes
     ance1 = get_ancestors(analysis, n1)
     ance2 = get_ancestors(analysis, n2)
+    ancev1 = get_ancestors(analysis, v1)
+    ancev2 = get_ancestors(analysis, v2)
 
-    # DDI-type lemmas
+    # DDI-type characteristic lemmas
     advise_lemmas = ["administer", "use", "recommend", "consider", "approach",
                      "avoid", "monitor", "advise", "require", "contraindicate"]
     effect_lemmas = ["increase", "report", "potentiate", "enhance", "decrease",
@@ -248,31 +243,20 @@ def extract_features(analysis, entities, e1, e2):
     mechanism_lemmas = ["increase", "decrease", "result", "report", "expect",
                         "reduce", "inhibit", "show", "interfere", "cause",
                         "indicate", "demonstrate"]
-
-    # effect_lemmas = ["administered", "concurrently", "concomitantly", "increase", "increases", "increased", "effect",
-    #                 "effects", "prevent", "prevents", "prevented", "potentiate", "potentiates", "potentiated"]
-    # mechanism_lemmas = ["reduce", "reduces", "reduced", "decrease", "decreases", "decreased", "change", "changes",
-    #                    "changed", "elevate", "elevates", "elevated", "interfere", "interferes", "interfered"]
-
     # Mix lemmas
     mix_lemmas = list(set(
         advise_lemmas+effect_lemmas+int_lemmas+mechanism_lemmas))
-    # Modal verbs
-    modal_vb = [ "can", "could", "may", "might", "must", "will", "would",
-                 "shall", "should"]
+    # Modal verbs lemmas
+    modal_vb = ["can", "could", "may", "might", "must", "will", "would",
+                "shall", "should"]
 
-    # Modal verbs and DDI-type lemmas present
+    # Modal verbs and DDI-type lemmas present in sentence
     modal_present = check_lemmas(analysis, modal_vb)
     lemma_present = check_lemmas(analysis, mix_lemmas)
     advise_present = check_lemmas(analysis, advise_lemmas)
     effect_present = check_lemmas(analysis, effect_lemmas)
     int_present = check_lemmas(analysis, int_lemmas)
     mechanism_present = check_lemmas(analysis, effect_lemmas)
-
-    # e1<-*-VB == VB-*->e2
-    v1_equal_v2 = v1["address"] == v2["address"]
-    # e1<-*-VB-*>VB-*->e2
-    v1_deps_v2 = [v2["address"]] in v1["deps"].values()
 
     # e1<-*-VB is part DDI-type lemmas
     advise_v1 = v1["lemma"] if v1["lemma"] in advise_lemmas else "null"
@@ -285,60 +269,115 @@ def extract_features(analysis, entities, e1, e2):
     int_v2 = v2["lemma"] if v2["lemma"] in int_lemmas else "null"
     mechanism_v2 = v2["lemma"] if v2["lemma"] in mechanism_lemmas else "null"
 
+    # Check if entities hang from the same verb
+    v1_lemma = v1["lemma"]
+    v2_lemma = v2["lemma"]
+    v1_equal_v2 = v1 == v2
+
     # Get head dependencies
-    #e1_dep = get_head_dependency(analysis, n1)
-    #e2_dep = get_head_dependency(analysis, n2)
+    e1_rel = n1["rel"]
+    e2_rel = n2["rel"]
+    v1_rel = v1["rel"]
+    v2_rel = v2["rel"]
+
+    # Get node dependencies
+    e1_deps = "_".join(n1["deps"].keys()) if len(n1["deps"]) else "null"
+    e2_deps = "_".join(n2["deps"].keys()) if len(n2["deps"]) else "null"
+    v1_deps = "_".join(v1["deps"].keys()) if len(v1["deps"]) else "null"
+    v2_deps = "_".join(v2["deps"].keys()) if len(v2["deps"]) else "null"
+
+    # Get entity tags
+    e1_tag = n1["tag"]
+    e2_tag = n2["tag"]
+    v1_tag = v1["tag"]
+    v2_tag = v2["tag"]
+
+    # Get node order
+    e1_over_e2 = n1 in ance2
+    e2_over_e1 = n2 in ance1
+    v1_over_v2 = v1 in ancev2
+    v2_over_v1 = v2 in ancev1
 
     # Common ancestor features
-    common = [n for n in ance1 if n in ance2]
-    common_tag = common[0]["tag"] if len(common) else "null"
-    common_dist_e1 = ance1.index(common[0])+1 if len(common) else 99
-    common_dist_e2 = ance2.index(common[0])+1 if len(common) else 99
-    common_dist_sum = common_dist_e1 + common_dist_e2
+    common = ([n for n in ance1 if n in ance2] if len(ance1) > len(ance2) else
+              [n for n in ance2 if n in ance1])
     common_rel = common[0]["rel"] if len(common) else "null"
-    common_dist = len(ance1)-ance1.index(common[0]) if len(common) else 99
+    common_deps = ("_".join(common[0]["deps"].keys())
+                   if len(common) and len(common[0]["deps"]) else "null")
+    common_tag = common[0]["tag"] if len(common) else "null"
+    common_dist_root = (len(ance1) - 1 - ance1.index(common[0])
+                        if len(common) else 99)
+    common_dist_e1 = ance1.index(common[0]) if len(common) else 99
+    common_dist_e2 = ance2.index(common[0]) if len(common) else 99
+
+    # Common ancestor son's rel for each entity's branch
+    common_dep11_rel = (
+        ance1[ance1.index(common[0])-1]["rel"]
+        if len(common) and ance1.index(common[0]) > 0 else "null")
+    common_dep12_rel = (
+        ance1[ance1.index(common[0])-2]["rel"]
+        if len(common) and ance1.index(common[0]) > 1 else "null")
+    common_dep13_rel = (
+        ance1[ance1.index(common[0])-3]["rel"]
+        if len(common) and ance1.index(common[0]) > 2 else "null")
+    common_dep21_rel = (
+        ance2[ance2.index(common[0])-1]["rel"]
+        if len(common) and ance2.index(common[0]) > 0 else "null")
+    common_dep22_rel = (
+        ance2[ance2.index(common[0])-2]["rel"]
+        if len(common) and ance2.index(common[0]) > 1 else "null")
+    common_dep23_rel = (
+        ance2[ance2.index(common[0])-3]["rel"]
+        if len(common) and ance2.index(common[0]) > 2 else "null")
+
+    # Common ancestor son's tag for each entity's branch
+    common_dep11_tag = (
+        ance1[ance1.index(common[0])-1]["tag"]
+        if len(common) and ance1.index(common[0]) > 0 else "null")
+    common_dep21_tag = (
+        ance2[ance2.index(common[0])-1]["tag"]
+        if len(common) and ance2.index(common[0]) > 0 else "null")
     try:
         child11 = ance1[ance1.index(common[0])-1]['tag']
-    except:
+    except Exception:
         child11 = 'null'
     try:
         child12 = ance1[ance1.index(common[0])-2]['tag']
-    except:
+    except Exception:
         child12 = 'null'
     try:
         child13 = ance1[ance1.index(common[0])-3]['tag']
-    except:
+    except Exception:
         child13 = 'null'
     try:
         child21 = ance2[ance1.index(common[0])-1]['tag']
-    except:
+    except Exception:
         child21 = 'null'
     try:
         child22 = ance2[ance1.index(common[0])-2]['tag']
-    except:
+    except Exception:
         child22 = 'null'
     try:
         child23 = ance2[ance1.index(common[0]) - 3]['tag']
-    except:
+    except Exception:
         child23 = 'null'
+
+    # Tree address features
 
     # e1 -conj-> e2
     e1_conj_e2 = get_dependency_address(n1, "conj") == n2["address"]
-
     # e1 <-dobj-VB
     # e2 <-nmod-VB
     # e1 <-dobj-VB-nmod->e2
     e1_dobj = get_dependency_address(v1, "dobj") == n1["address"]
     e2_nmod = get_dependency_address(v2, "nmod") == n2["address"]
     e1_dobj_nmod_e2 = e1_dobj and e2_nmod
-
     # e1<-conj-x<-dobj-VB
     # e1<-conj-x<-dobj-VB-nmod->e2
     x_dobj = get_dependency_address(v1, "dobj")
     nx = analysis.nodes[x_dobj] if x_dobj != -1 else v1
     e1_conj_dobj = get_dependency_address(nx, "conj") == n1["address"]
     e1_conj_dobj_nmod_e2 = e1_conj_dobj and e2_nmod
-
     #  e2<-nmod-x<-dobj-VB
     #  e1<-nsubj-VB
     #  e1<-nsubj-VB-dobj->x-nmod->e2
@@ -347,10 +386,11 @@ def extract_features(analysis, entities, e1, e2):
     e2_nmod = get_dependency_address(v2, "nmod") == n2["address"]
     e1_nsubj = get_dependency_address(v1, "nsubj") == n1["address"]
     e1_nsubj_dobj_nmod_e2 = e1_nsubj and e2_nmod
-
     # e1<-nsubjpass-VB-*->e2
     e1_nsubjpass = get_dependency_address(v1, "nsubjpass") == n1["address"]
-    e1_nsubjpass_e2 = e1_nsubjpass and (v1_equal_v2 or v1_deps_v2)
+    e1_nsubjpass_e2 = e1_nsubjpass and (v1_equal_v2 or v1_over_v2)
+
+    # NER features
 
     # Jackard dist and Edit dist
     try:
@@ -362,18 +402,14 @@ def extract_features(analysis, entities, e1, e2):
     except Exception:
         jaccard_dist = 10
         edit_dist = 10
-    lemma1=str(n1["lemma"])
-    lemma2=str(n1["lemma"])
-
-    tag1=str(n1["tag"])
-    tag2=str(n1["tag"])
-    rel1=str(n1["rel"])
-    rel2=str(n1["rel"])
-    # NER features
-    # su1 = str(n1["lemma"])[-3:]
-    # su2 = str(n2["lemma"])[-3:]
-    # pre1 = str(n1["lemma"])[:3]
-    # pre2 = str(n2["lemma"])[:3]
+    # Entity lemma features
+    lemma1 = str(n1["lemma"])
+    lemma2 = str(n2["lemma"])
+    # 3-Prefix/Suffix from lemma
+    pre1 = lemma1[:3]
+    pre1 = lemma2[:3]
+    suf1 = lemma1[-3:]
+    suf2 = lemma2[-3:]
     # All token in capital letters
     capital1 = lemma1.isupper()
     capital2 = lemma2.isupper()
@@ -399,75 +435,87 @@ def extract_features(analysis, entities, e1, e2):
 
     # Gather variables
     feats = [
-        modal_present,
+        modal_present,  # 5
         lemma_present,
         advise_present,
         effect_present,
         int_present,
-        mechanism_present,
-        v1_equal_v2,
-        v1_deps_v2,
+        mechanism_present,  # 10
         advise_v1,
         effect_v1,
         int_v1,
         mechanism_v1,
-        advise_v2,
+        advise_v2,  # 15
         effect_v2,
         int_v2,
         mechanism_v2,
-        # e1_dep,
-        # e2_dep,
-        # e1_conj_e2,
-        # e1_dobj,
-        # e2_nmod,
-        # e1_dobj_nmod_e2,
-        # e1_conj_dobj,
-        # e1_conj_dobj_nmod_e2,
-        # e2_nmod,
-        # e1_nsubj,
-        # e1_nsubj_dobj_nmod_e2,
-        # e1_nsubjpass,
-        # e1_nsubjpass_e2,
-        # jaccard_dist,
-        # edit_dist,
-        capital1,
-        b_capital1,
-        # capitals1,
-        digits1,
-        hyphens1,
-        symbols1,
-        # length1,
-        capital2,
-        b_capital2,
-        # capitals2,
-        digits2,
-        hyphens2,
-        symbols2,
-        # length2,
-        rel1,
-        rel2,
-        # su1,
-        # su2,
-        # pre1,
-        # pre2,
-        tag1,
-        tag2,
-        common_dist_e1,
-        common_dist_e2,
-        common_tag,
+        v1_equal_v2,
+        v1_lemma,  # 20
+        v2_lemma,
+        e1_rel,
+        e2_rel,
+        v1_rel,
+        v2_rel,  # 25
+        e1_deps,
+        e2_deps,
+        e1_tag,
+        e2_tag,
+        v1_tag,  # 30
+        v2_tag,
+        e1_over_e2,
+        e2_over_e1,
+        v1_over_v2,
+        v2_over_v1,  # 35
         common_rel,
-        common_dist,
-        common_dist_sum,
+        common_tag,
+        common_dist_root,
+        common_dist_e1,
+        common_dist_e2,  # 40
+        common_dep11_rel,
+        common_dep12_rel,
+        common_dep13_rel,
+        common_dep21_rel,
+        common_dep22_rel,  # 45
+        common_dep23_rel,
+        common_dep11_tag,
+        common_dep21_tag,
         child11,
-        child12,
+        child12,  # 50
         child13,
         child21,
         child22,
         child23,
-        common_dist_e1 < common_dist_e2,
-        common_dist_e1 == common_dist_e2,
+        e1_conj_e2,  # 55
+        e1_dobj_nmod_e2,
+        e1_conj_dobj,
+        e1_conj_dobj_nmod_e2,
+        e1_nsubj_dobj_nmod_e2,
+        e1_nsubjpass_e2,  # 60
+        jaccard_dist,
+        edit_dist,
+        pre1,
+        pre1,
+        suf1,  # 65
+        suf2,
+        capital1,
+        b_capital1,
+        capitals1,
+        digits1,  # 70
+        hyphens1,
+        symbols1,
+        length1,
+        capital2,
+        b_capital2,  # 75
+        capitals2,
+        digits2,
+        hyphens2,
+        symbols2,
+        length2,  # 80
+        v1_deps,
+        v2_deps,
+        common_deps,
         ]
-    # Turn boolean to var_i=1/0
+    # Turn variables f to categorical var_i=f
     feats = [f"var_{i}={f}" for i, f in enumerate(feats)]
     return feats
 
@@ -531,21 +579,6 @@ def get_features_labels(input):
         feats.append(feat)
     return ids, feats, labels
 
-
-def address(tree, start_e1, end_e1, start_e2, end_e2):
-    number_node_e1 = None
-    number_node_e2 = None
-
-    # get the element number of the entities
-    for i in range(1, len(tree.nodes)):
-        node = tree.nodes[i]
-        # it's not a bracket
-        if 'start' in node:
-            if node["start"] >= start_e1 and node["end"] <= end_e1 and number_node_e1 is None:
-                number_node_e1 = i
-            elif node["start"] >= start_e2 and node["end"] <= end_e2 and number_node_e2 is None:
-                number_node_e2 = i
-    return number_node_e1, number_node_e2
 
 def build_features(inputdir, outputfile):
     """
@@ -616,8 +649,10 @@ def learner(model, feature_input, output_fn):
         # MaxEnt learner flow
         megam_features = f"{tmp_path}/megam_train_features.dat"
         megam_model = f"{output_fn}.megam"
-        system(f"cat {feature_input}  | cut -f4- > \
+        system(f"cat {feature_input}  | cut -f {feat_col} > \
             {megam_features}")
+        # system(f"cat {feature_input}  | cut -f4- > \
+        #     {megam_features}")
         system(f"./{megam} -quiet -nc -nobias multiclass \
             {megam_features} > {megam_model}")
 
@@ -648,7 +683,7 @@ def learner(model, feature_input, output_fn):
         encoder.fit(x_cat)
         x = encoder.transform(x_cat).toarray()
         # Create RF instance
-        model = SVC()
+        model = SVC(random_state=random_seed)
         # Train RF instance
         model.fit(x, y)
         # Save model to pickle
@@ -661,7 +696,9 @@ def learner(model, feature_input, output_fn):
         encoder.fit(x_cat)
         x = encoder.transform(x_cat).toarray()
         # Create RF instance
-        model = GradientBoostingClassifier()
+        model = GradientBoostingClassifier(
+            n_estimators=n_estimators,
+            random_state=random_seed)
         # Train RF instance
         model.fit(x, y)
         # Save model to pickle
@@ -691,10 +728,12 @@ def classifier(model, feature_input, model_input, outputfile):
         # MaxEnt classifier flow
         megam_features = f"{tmp_path}/megam_valid_features.dat"
         megam_predictions = f"{tmp_path}/megam_predictions.dat"
-        system(f"cat {feature_input} | cut -f4- > \
+        system(f"cat {feature_input} | cut -f {feat_col} > \
             {megam_features}")
-        system(f"./{megam} -nc -nobias -predict {model_input}.megam multiclass\
-            {megam_features} > {megam_predictions}")
+        # system(f"cat {feature_input} | cut -f4- > \
+        #     {megam_features}")
+        system(f"./{megam} -quiet -nc -nobias -predict {model_input}.megam \
+            multiclass {megam_features} > {megam_predictions}")
         with open(megam_predictions, "r") as fp:
             lines = fp.readlines()
         predictions = [line.split("\t")[0] for line in lines]
@@ -763,11 +802,11 @@ def main(model, train_input_fn, valid_input_fn, train_features_fn,
         - outputfile: string with file name to save output to.
     """
     # Run train_features
-    build_features(train_input_fn, train_features_fn)
+    # build_features(train_input_fn, train_features_fn)
     # Train model
     learner(model, train_features_fn, ml_model_fn)
     # Run validation features
-    build_features(valid_input_fn, valid_features_fn)
+    # build_features(valid_input_fn, valid_features_fn)
     # Predict validation
     classifier(model, valid_features_fn, ml_model_fn, outputfile)
     # Evaluate prediction
