@@ -24,15 +24,15 @@ tmp_path = "data/tmp"
 if not path.exists(tmp_path):  # Create dir if not exists
     makedirs(tmp_path)
     print(f"[INFO] Created a new folder {tmp_path}")
-model = "MaxEnt"
-# model = "MLP"
+# model = "MaxEnt"
+model = "MLP"
 # model = "SVC"
 # model = "GBC"
 train_input_fn = "data/Train"
 valid_input_fn = "data/Devel"
 # valid_input_fn = "data/Test-DDI"
-train_features_fn = f"{tmp_path}/DDI_ML_train_features.txt"
-valid_features_fn = f"{tmp_path}/DDI_ML_valid_features.txt"
+train_features_fn = f"{tmp_path}/DDI_ML_train_features_MLP.txt"
+valid_features_fn = f"{tmp_path}/DDI_ML_valid_features_MLP.txt"
 # valid_features_fn = f"{tmp_path}/DDI_ML_test_features.txt"
 outputfile = f"{tmp_path}/task9.2_ML{model}_1.txt"
 
@@ -47,8 +47,9 @@ random_seed = 23
 # feat_col = "4-10,17-27,32,34-46,49,53,58,61-65"  # 0.3806
 # feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76"  # 0.382
 feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76"  # 0.382
+feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76,84,85"  # 0.3901
 # MLP params
-hidden_layer_sizes = (60,)
+hidden_layer_sizes = (45,)
 activation = "relu"
 solver = "adam"
 n_epochs = 30
@@ -285,6 +286,8 @@ def extract_features(analysis, entities, e1, e2):
     e2_deps = "_".join(n2["deps"].keys()) if len(n2["deps"]) else "null"
     v1_deps = "_".join(v1["deps"].keys()) if len(v1["deps"]) else "null"
     v2_deps = "_".join(v2["deps"].keys()) if len(v2["deps"]) else "null"
+    ance1_deps = "_".join([a["rel"] for a in ance1]) if len(ance1) else "null"
+    ance2_deps = "_".join([a["rel"] for a in ance2]) if len(ance2) else "null"
 
     # Get entity tags
     e1_tag = n1["tag"]
@@ -514,6 +517,8 @@ def extract_features(analysis, entities, e1, e2):
         v1_deps,
         v2_deps,
         common_deps,
+        ance1_deps,
+        ance2_deps,
         ]
     # Turn variables f to categorical var_i=f
     feats = [f"var_{i}={f}" for i, f in enumerate(feats)]
