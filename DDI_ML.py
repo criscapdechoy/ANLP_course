@@ -24,15 +24,15 @@ tmp_path = "data/tmp"
 if not path.exists(tmp_path):  # Create dir if not exists
     makedirs(tmp_path)
     print(f"[INFO] Created a new folder {tmp_path}")
-# model = "MaxEnt"
-model = "MLP"
+model = "MaxEnt"
+# model = "MLP"
 # model = "SVC"
 # model = "GBC"
 train_input_fn = "data/Train"
 valid_input_fn = "data/Devel"
 # valid_input_fn = "data/Test-DDI"
-train_features_fn = f"{tmp_path}/DDI_ML_train_features_MLP.txt"
-valid_features_fn = f"{tmp_path}/DDI_ML_valid_features_MLP.txt"
+train_features_fn = f"{tmp_path}/DDI_ML_train_features.txt"
+valid_features_fn = f"{tmp_path}/DDI_ML_valid_features.txt"
 # valid_features_fn = f"{tmp_path}/DDI_ML_test_features.txt"
 outputfile = f"{tmp_path}/task9.2_ML{model}_1.txt"
 
@@ -43,13 +43,11 @@ megam = "resources/megam_i686.opt"
 
 random_seed = 23
 # MaxEnt params
-# feat_col = "4-"
-# feat_col = "4-10,17-27,32,34-46,49,53,58,61-65"  # 0.3806
-# feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76"  # 0.382
-feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76"  # 0.382
-feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76,84,85"  # 0.3901
+feat_col = "4-50"
+# feat_col = "4-10,17-27,32,34-49,52-53,57,60-65,75"  # 0.3881
+# feat_col = "4-10,17-27,32,34-53,57,60-65,75"  # 0.3916
 # MLP params
-hidden_layer_sizes = (45,)
+hidden_layer_sizes = (40,)
 activation = "relu"
 solver = "adam"
 n_epochs = 30
@@ -337,33 +335,9 @@ def extract_features(analysis, entities, e1, e2):
     common_dep11_tag = (
         ance1[ance1.index(common[0])-1]["tag"]
         if len(common) and ance1.index(common[0]) > 0 else "null")
-    common_dep21_tag = (
-        ance2[ance2.index(common[0])-1]["tag"]
-        if len(common) and ance2.index(common[0]) > 0 else "null")
-    try:
-        child11 = ance1[ance1.index(common[0])-1]['tag']
-    except Exception:
-        child11 = 'null'
-    try:
-        child12 = ance1[ance1.index(common[0])-2]['tag']
-    except Exception:
-        child12 = 'null'
-    try:
-        child13 = ance1[ance1.index(common[0])-3]['tag']
-    except Exception:
-        child13 = 'null'
-    try:
-        child21 = ance2[ance1.index(common[0])-1]['tag']
-    except Exception:
-        child21 = 'null'
-    try:
-        child22 = ance2[ance1.index(common[0])-2]['tag']
-    except Exception:
-        child22 = 'null'
-    try:
-        child23 = ance2[ance1.index(common[0]) - 3]['tag']
-    except Exception:
-        child23 = 'null'
+    common_dep22_tag = (
+        ance2[ance2.index(common[0])-2]["tag"]
+        if len(common) and ance2.index(common[0]) > 1 else "null")
 
     # Tree address features
 
@@ -410,7 +384,7 @@ def extract_features(analysis, entities, e1, e2):
     lemma2 = str(n2["lemma"])
     # 3-Prefix/Suffix from lemma
     pre1 = lemma1[:3]
-    pre1 = lemma2[:3]
+    pre2 = lemma2[:3]
     suf1 = lemma1[-3:]
     suf2 = lemma2[-3:]
     # All token in capital letters
@@ -444,81 +418,46 @@ def extract_features(analysis, entities, e1, e2):
         effect_present,
         int_present,
         mechanism_present,  # 10
-        advise_v1,
-        effect_v1,
-        int_v1,
-        mechanism_v1,
-        advise_v2,  # 15
-        effect_v2,
         int_v2,
         mechanism_v2,
         v1_equal_v2,
-        v1_lemma,  # 20
-        v2_lemma,
+        v1_lemma,
+        v2_lemma,  # 15
         e1_rel,
         e2_rel,
         v1_rel,
-        v2_rel,  # 25
-        e1_deps,
+        v2_rel,
+        e1_deps,  # 20
         e2_deps,
-        e1_tag,
-        e2_tag,
-        v1_tag,  # 30
-        v2_tag,
         e1_over_e2,
-        e2_over_e1,
         v1_over_v2,
-        v2_over_v1,  # 35
-        common_rel,
+        v2_over_v1,
+        common_rel,  # 25
         common_tag,
         common_dist_root,
         common_dist_e1,
-        common_dist_e2,  # 40
+        common_dist_e2,
+        common_deps,  # 30
         common_dep11_rel,
         common_dep12_rel,
         common_dep13_rel,
         common_dep21_rel,
-        common_dep22_rel,  # 45
+        common_dep22_rel,  # 35
         common_dep23_rel,
         common_dep11_tag,
-        common_dep21_tag,
-        child11,
-        child12,  # 50
-        child13,
-        child21,
-        child22,
-        child23,
-        e1_conj_e2,  # 55
-        e1_dobj_nmod_e2,
-        e1_conj_dobj,
-        e1_conj_dobj_nmod_e2,
-        e1_nsubj_dobj_nmod_e2,
-        e1_nsubjpass_e2,  # 60
-        jaccard_dist,
-        edit_dist,
-        pre1,
-        pre1,
-        suf1,  # 65
-        suf2,
-        capital1,
-        b_capital1,
-        capitals1,
-        digits1,  # 70
-        hyphens1,
-        symbols1,
-        length1,
-        capital2,
-        b_capital2,  # 75
-        capitals2,
-        digits2,
-        hyphens2,
-        symbols2,
-        length2,  # 80
+        common_dep22_tag,
         v1_deps,
-        v2_deps,
-        common_deps,
+        v2_deps,  # 40
         ance1_deps,
         ance2_deps,
+        e1_conj_dobj_nmod_e2,
+        jaccard_dist,
+        edit_dist,  # 45
+        pre1,
+        pre2,
+        suf1,
+        suf2,
+        capitals2,  # 50
         ]
     # Turn variables f to categorical var_i=f
     feats = [f"var_{i}={f}" for i, f in enumerate(feats)]
@@ -666,7 +605,7 @@ def learner(model, feature_input, output_fn):
         # OneHotEncode variables
         encoder = OneHotEncoder(handle_unknown="ignore")
         encoder.fit(x_cat)
-        x = encoder.transform(x_cat).toarray()
+        x = encoder.transform(x_cat)
         # Create RF instance
         model = MLPClassifier(
             hidden_layer_sizes=hidden_layer_sizes,
@@ -686,7 +625,7 @@ def learner(model, feature_input, output_fn):
         # OneHotEncode variables
         encoder = OneHotEncoder(handle_unknown="ignore")
         encoder.fit(x_cat)
-        x = encoder.transform(x_cat).toarray()
+        x = encoder.transform(x_cat)
         # Create RF instance
         model = SVC(random_state=random_seed)
         # Train RF instance
@@ -699,7 +638,7 @@ def learner(model, feature_input, output_fn):
         # OneHotEncode variables
         encoder = OneHotEncoder(handle_unknown="ignore")
         encoder.fit(x_cat)
-        x = encoder.transform(x_cat).toarray()
+        x = encoder.transform(x_cat)
         # Create RF instance
         model = GradientBoostingClassifier(
             n_estimators=n_estimators,
@@ -748,7 +687,7 @@ def classifier(model, feature_input, model_input, outputfile):
         with open(f"{model_input}.MLP", "rb") as fp:
             model, encoder = pickle.load(fp)
         # OneHotEncode variables
-        x_ = encoder.transform(x).toarray()
+        x_ = encoder.transform(x)
         # Predict classes
         predictions = model.predict(x_)
 
@@ -757,7 +696,7 @@ def classifier(model, feature_input, model_input, outputfile):
         with open(f"{model_input}.SVC", "rb") as fp:
             model, encoder = pickle.load(fp)
         # OneHotEncode variables
-        x_ = encoder.transform(x).toarray()
+        x_ = encoder.transform(x)
         # Predict classes
         predictions = model.predict(x_)
 
@@ -766,7 +705,7 @@ def classifier(model, feature_input, model_input, outputfile):
         with open(f"{model_input}.GBC", "rb") as fp:
             model, encoder = pickle.load(fp)
         # OneHotEncode variables
-        x_ = encoder.transform(x).toarray()
+        x_ = encoder.transform(x)
         # Predict classes
         predictions = model.predict(x_)
     else:
