@@ -4,18 +4,17 @@ Python scripts that contains functions to train and evaluate a ML model to
 detect Drug-Drug Interaction.
 """
 # !/usr/bin/python3
+from nltk import jaccard_distance, edit_distance
 from nltk.parse.corenlp import CoreNLPDependencyParser
 from os import listdir, system, path, makedirs
-from sklearn.neural_network import MLPClassifier
-from sklearn.svm import SVC
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.svm import SVC
 from sys import exit
 from tqdm import tqdm
 from xml.dom.minidom import parse
 import pickle
-import re
-from nltk import jaccard_distance, edit_distance
 # Reference constants
 MODELS = ["MaxEnt", "MLP", "SVC", "GBC"]
 
@@ -24,8 +23,8 @@ tmp_path = "data/tmp"
 if not path.exists(tmp_path):  # Create dir if not exists
     makedirs(tmp_path)
     print(f"[INFO] Created a new folder {tmp_path}")
-model = "MaxEnt"
-# model = "MLP"
+# model = "MaxEnt"
+model = "MLP"
 # model = "SVC"
 # model = "GBC"
 train_input_fn = "data/Train"
@@ -43,14 +42,13 @@ megam = "resources/megam_i686.opt"
 
 random_seed = 23
 # MaxEnt params
-feat_col = "4-50"
-# feat_col = "4-10,17-27,32,34-49,52-53,57,60-65,75"  # 0.3881
-# feat_col = "4-10,17-27,32,34-53,57,60-65,75"  # 0.3916
+feat_col = "4-"  # 0.3777
 # MLP params
-hidden_layer_sizes = (40,)
+hidden_layer_sizes = (45,)
 activation = "relu"
 solver = "adam"
-n_epochs = 30
+n_epochs = 100
+early_stopping = True
 verbose = False
 # GBC params
 n_estimators = 50
@@ -257,14 +255,7 @@ def extract_features(analysis, entities, e1, e2):
     int_present = check_lemmas(analysis, int_lemmas)
     mechanism_present = check_lemmas(analysis, effect_lemmas)
 
-    # e1<-*-VB is part DDI-type lemmas
-    advise_v1 = v1["lemma"] if v1["lemma"] in advise_lemmas else "null"
-    effect_v1 = v1["lemma"] if v1["lemma"] in effect_lemmas else "null"
-    int_v1 = v1["lemma"] if v1["lemma"] in int_lemmas else "null"
-    mechanism_v1 = v1["lemma"] if v1["lemma"] in mechanism_lemmas else "null"
     # e2<-*-VB is part DDI-type lemmas
-    advise_v2 = v2["lemma"] if v2["lemma"] in advise_lemmas else "null"
-    effect_v2 = v2["lemma"] if v2["lemma"] in effect_lemmas else "null"
     int_v2 = v2["lemma"] if v2["lemma"] in int_lemmas else "null"
     mechanism_v2 = v2["lemma"] if v2["lemma"] in mechanism_lemmas else "null"
 
@@ -287,15 +278,8 @@ def extract_features(analysis, entities, e1, e2):
     ance1_deps = "_".join([a["rel"] for a in ance1]) if len(ance1) else "null"
     ance2_deps = "_".join([a["rel"] for a in ance2]) if len(ance2) else "null"
 
-    # Get entity tags
-    e1_tag = n1["tag"]
-    e2_tag = n2["tag"]
-    v1_tag = v1["tag"]
-    v2_tag = v2["tag"]
-
     # Get node order
     e1_over_e2 = n1 in ance2
-    e2_over_e1 = n2 in ance1
     v1_over_v2 = v1 in ancev2
     v2_over_v1 = v2 in ancev1
 
@@ -340,35 +324,14 @@ def extract_features(analysis, entities, e1, e2):
         if len(common) and ance2.index(common[0]) > 1 else "null")
 
     # Tree address features
-
-    # e1 -conj-> e2
-    e1_conj_e2 = get_dependency_address(n1, "conj") == n2["address"]
-    # e1 <-dobj-VB
-    # e2 <-nmod-VB
-    # e1 <-dobj-VB-nmod->e2
-    e1_dobj = get_dependency_address(v1, "dobj") == n1["address"]
-    e2_nmod = get_dependency_address(v2, "nmod") == n2["address"]
-    e1_dobj_nmod_e2 = e1_dobj and e2_nmod
-    # e1<-conj-x<-dobj-VB
     # e1<-conj-x<-dobj-VB-nmod->e2
+    e2_nmod = get_dependency_address(v2, "nmod") == n2["address"]
     x_dobj = get_dependency_address(v1, "dobj")
     nx = analysis.nodes[x_dobj] if x_dobj != -1 else v1
     e1_conj_dobj = get_dependency_address(nx, "conj") == n1["address"]
     e1_conj_dobj_nmod_e2 = e1_conj_dobj and e2_nmod
-    #  e2<-nmod-x<-dobj-VB
-    #  e1<-nsubj-VB
-    #  e1<-nsubj-VB-dobj->x-nmod->e2
-    x_dobj = get_dependency_address(v2, "dobj")
-    nx = analysis.nodes[x_dobj] if x_dobj != -1 else v2
-    e2_nmod = get_dependency_address(v2, "nmod") == n2["address"]
-    e1_nsubj = get_dependency_address(v1, "nsubj") == n1["address"]
-    e1_nsubj_dobj_nmod_e2 = e1_nsubj and e2_nmod
-    # e1<-nsubjpass-VB-*->e2
-    e1_nsubjpass = get_dependency_address(v1, "nsubjpass") == n1["address"]
-    e1_nsubjpass_e2 = e1_nsubjpass and (v1_equal_v2 or v1_over_v2)
 
     # NER features
-
     # Jackard dist and Edit dist
     try:
         jaccard_dist = round(jaccard_distance(set(n1["lemma"]),
@@ -387,28 +350,8 @@ def extract_features(analysis, entities, e1, e2):
     pre2 = lemma2[:3]
     suf1 = lemma1[-3:]
     suf2 = lemma2[-3:]
-    # All token in capital letters
-    capital1 = lemma1.isupper()
-    capital2 = lemma2.isupper()
-    # Begin with capital letter
-    b_capital1 = lemma1.isupper()
-    b_capital2 = lemma2.isupper()
-    # Number of digits in token
-    digits1 = bool(sum(i.isdigit() for i in lemma1))
-    digits2 = bool(sum(i.isdigit() for i in lemma2))
     # Number of capitals in token
-    capitals1 = sum(i.isupper() for i in lemma1)
     capitals2 = sum(i.isupper() for i in lemma2)
-    # Number of hyphens in token
-    hyphens1 = bool(sum(['-' == i for i in lemma1]))
-    hyphens2 = bool(sum(['-' == i for i in lemma2]))
-    # Number of symbols in token
-    symbols1 = bool(len(re.findall(r'[()+-]', lemma1)))
-    symbols2 = bool(len(re.findall(r'[()+-]', lemma2)))
-    # Token length
-    length1 = len(lemma1)
-    # Token length
-    length2 = len(lemma2)
 
     # Gather variables
     feats = [
@@ -612,6 +555,7 @@ def learner(model, feature_input, output_fn):
             activation=activation,
             solver=solver,
             max_iter=n_epochs,
+            early_stopping=early_stopping,
             random_state=random_seed,
             verbose=verbose)
         # Train RF instance
