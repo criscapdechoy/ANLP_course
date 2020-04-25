@@ -28,10 +28,10 @@ if not path.exists(tmp_path):  # Create dir if not exists
     makedirs(tmp_path)
     print(f"[INFO] Created a new folder {tmp_path}")
 # model = "MaxEnt"
-# model = "MLP"
+model = "MLP"
 # model = "SVC"
 # model = "GBC"
-model = "LR"
+# model = "LR"
 
 print(model)
 
@@ -48,14 +48,14 @@ ml_model_fn = f"{tmp_path}/DDI_ML_model"
 # Specify local megam file
 megam = "resources/megam_i686.opt"
 
-random_seed = 23
+random_seed = 10
 # MaxEnt params
 feat_col = "4-"  # 0.3777
 feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76,84,85"  # 0.3901
 
 # MLP params
-hidden_layer_sizes = (27,)
-print(hidden_layer_sizes)
+hidden_layer_sizes = (45,)
+print(f"Size of hidden layer: {hidden_layer_sizes}") if model == "MLP" else print('')
 alpha = 1
 activation = "relu"
 solver = "adam"
@@ -454,7 +454,6 @@ def extract_features(analysis, entities, e1, e2):
         pre3_2,
         suf3_1,
         suf3_2,
-        #capitals2,
     ]
     # Turn variables f to categorical var_i=f
     feats = [f"var_{i}={f}" for i, f in enumerate(feats)]
@@ -657,7 +656,7 @@ def learner(model, feature_input, output_fn):
                    penalty='l2',
                    max_iter=1000,
                    random_state=random_seed,
-                   solver='lbfgs')
+                   solver='lbfgs',verbose=1)
         # Train RF instance
         model.fit(x, y)
         # Save model to pickle
@@ -793,11 +792,11 @@ def main(model, train_input_fn, valid_input_fn, train_features_fn,
         - outputfile: string with file name to save output to.
     """
     # Run train_features
-    build_features(train_input_fn, train_features_fn)
+    # build_features(train_input_fn, train_features_fn)
     # Train model
     learner(model, train_features_fn, ml_model_fn)
     # Run validation features
-    build_features(valid_input_fn, valid_features_fn)
+    # build_features(valid_input_fn, valid_features_fn)
     # Predict validation
     classifier(model, valid_features_fn, ml_model_fn, outputfile)
     # Evaluate prediction
