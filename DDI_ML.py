@@ -10,11 +10,15 @@ from os import listdir, system, path, makedirs
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import OneHotEncoder
+from sklearn import preprocessing
+from sklearn.linear_model import LogisticRegression as LR
+from sklearn.neighbors import KNeighborsClassifier as KNC
 from sklearn.svm import SVC
 from sys import exit
 from tqdm import tqdm
 from xml.dom.minidom import parse
 import pickle
+
 # Reference constants
 MODELS = ["MaxEnt", "MLP", "SVC", "GBC"]
 
@@ -24,16 +28,21 @@ if not path.exists(tmp_path):  # Create dir if not exists
     makedirs(tmp_path)
     print(f"[INFO] Created a new folder {tmp_path}")
 # model = "MaxEnt"
-model = "MLP"
+# model = "MLP"
 # model = "SVC"
 # model = "GBC"
+# model = "LR"
+model = "LR"
+
+print(model)
+
 train_input_fn = "data/Train"
 valid_input_fn = "data/Devel"
 # valid_input_fn = "data/Test-DDI"
 train_features_fn = f"{tmp_path}/DDI_ML_train_features.txt"
 valid_features_fn = f"{tmp_path}/DDI_ML_valid_features.txt"
 # valid_features_fn = f"{tmp_path}/DDI_ML_test_features.txt"
-outputfile = f"{tmp_path}/task9.2_ML{model}_1.txt"
+outputfile = f"{tmp_path}/task9.2_ML{model}.txt"
 
 # Model path to save it
 ml_model_fn = f"{tmp_path}/DDI_ML_model"
@@ -43,8 +52,12 @@ megam = "resources/megam_i686.opt"
 random_seed = 23
 # MaxEnt params
 feat_col = "4-"  # 0.3777
+feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76,84,85"  # 0.3901
+
 # MLP params
-hidden_layer_sizes = (45,)
+hidden_layer_sizes = (27,)
+print(hidden_layer_sizes)
+alpha = 1
 activation = "relu"
 solver = "adam"
 n_epochs = 100
@@ -52,6 +65,18 @@ early_stopping = True
 verbose = False
 # GBC params
 n_estimators = 50
+
+# Dict global tags
+dict_tags = {'JJ': 'JJ', 'JJR': 'JJ', 'JJS': 'JJ',
+             'NN': 'NN', 'NNS': 'NN', 'NNP': 'NN', 'NNPS': 'NN',
+             'PRP': 'PRP', 'PRP$': 'PRP',
+             'RB': 'RB', 'RBS': 'RB', 'RBR': 'RB',
+             'VB': 'VB', 'VBD': 'VB', 'VBG': 'VB', 'VBN': 'VB', 'VBP': 'VB', 'VBZ': 'VB',
+             'WP': 'WP', 'WP$': 'WP',
+             'CC': 'CC', 'CD': 'CF', 'DT': 'DT', 'EX': 'EX', 'FW': 'FW', 'IN': 'IN', 'LS': 'LS', 'MD': 'MD',
+             'PDT': 'DT', 'POS': 'POS',
+             'PRP': 'PRP', 'PRP': 'PRP$', 'RP': 'RP', 'SYS': 'SYS', 'TO': 'TO', 'UH': 'UH', 'WDT': 'DT', 'WRB': 'WRB',
+             'SYM':'SYM','-LRB-': '-LRB-', ',': ',',':':':', 'null': 'null'}
 
 # Get CoreNLP instance, which need to be running in http://localhost:9000
 DependencyParser = CoreNLPDependencyParser(url="http://localhost:9000")
@@ -62,7 +87,7 @@ StanfordCoreNLPServer_error = (
     f"\tjava -mx4g -cp 'resources/stanford-corenlp/*' "
     f"edu.stanford.nlp.pipeline.StanfordCoreNLPServer "
     f"-port 9000 -timeout 30000"
-    )
+)
 
 
 def parseXML(file):
@@ -177,7 +202,8 @@ def check_lemmas(analysis, lemmas):
     present = [nds[n] for n in nds
                if (nds[n]["word"] is not None and nds[n]["lemma"] in lemmas)]
     present = sorted(present, key=lambda x: x["head"])
-    return present[0]["lemma"] if len(present) else "null"
+    # return present[0]["lemma"] if len(present) else "null"
+    return "True" if len(present) else "False"
 
 
 def get_ancestors(analysis, node):
@@ -240,9 +266,13 @@ def extract_features(analysis, entities, e1, e2):
     mechanism_lemmas = ["increase", "decrease", "result", "report", "expect",
                         "reduce", "inhibit", "show", "interfere", "cause",
                         "indicate", "demonstrate"]
+    #advise_lemmas = ["should", "must", "may", "recommend", "caution"]
+    #effect_lemmas = ["produce", "administer", "potentiate", "prevent", "effect"]
+    int_lemmas = ["interact", "interaction"]
+    mechanism_lemmas = ["reduce", "increase", "decrease"]
     # Mix lemmas
     mix_lemmas = list(set(
-        advise_lemmas+effect_lemmas+int_lemmas+mechanism_lemmas))
+        advise_lemmas + effect_lemmas + int_lemmas + mechanism_lemmas))
     # Modal verbs lemmas
     modal_vb = ["can", "could", "may", "might", "must", "will", "would",
                 "shall", "should"]
@@ -256,8 +286,16 @@ def extract_features(analysis, entities, e1, e2):
     mechanism_present = check_lemmas(analysis, effect_lemmas)
 
     # e2<-*-VB is part DDI-type lemmas
-    int_v2 = v2["lemma"] if v2["lemma"] in int_lemmas else "null"
-    mechanism_v2 = v2["lemma"] if v2["lemma"] in mechanism_lemmas else "null"
+    advise_v1 = True if v1["lemma"] in advise_lemmas else "null"
+    effect_v1 = True if v1["lemma"] in effect_lemmas else "null"
+    int_v1 = True if v1["lemma"] in int_lemmas else "null"
+    mechanism_v1 = True if v1["lemma"] in mechanism_lemmas else "null"
+    # e2<-*-VB is part DDI-type lemmas
+    advise_v2 = True if v2["lemma"] in advise_lemmas else "null"
+    effect_v2 = True if v2["lemma"] in effect_lemmas else "null"
+    int_v2 = True if v2["lemma"] in int_lemmas else "null"
+    mechanism_v2 = True if v2["lemma"] in mechanism_lemmas else "null"
+
 
     # Check if entities hang from the same verb
     v1_lemma = v1["lemma"]
@@ -290,6 +328,7 @@ def extract_features(analysis, entities, e1, e2):
     common_deps = ("_".join(common[0]["deps"].keys())
                    if len(common) and len(common[0]["deps"]) else "null")
     common_tag = common[0]["tag"] if len(common) else "null"
+    common_tag = dict_tags[common_tag]
     common_dist_root = (len(ance1) - 1 - ance1.index(common[0])
                         if len(common) else 99)
     common_dist_e1 = ance1.index(common[0]) if len(common) else 99
@@ -297,30 +336,31 @@ def extract_features(analysis, entities, e1, e2):
 
     # Common ancestor son's rel for each entity's branch
     common_dep11_rel = (
-        ance1[ance1.index(common[0])-1]["rel"]
+        ance1[ance1.index(common[0]) - 1]["rel"]
         if len(common) and ance1.index(common[0]) > 0 else "null")
     common_dep12_rel = (
-        ance1[ance1.index(common[0])-2]["rel"]
+        ance1[ance1.index(common[0]) - 2]["rel"]
         if len(common) and ance1.index(common[0]) > 1 else "null")
     common_dep13_rel = (
-        ance1[ance1.index(common[0])-3]["rel"]
+        ance1[ance1.index(common[0]) - 3]["rel"]
         if len(common) and ance1.index(common[0]) > 2 else "null")
     common_dep21_rel = (
-        ance2[ance2.index(common[0])-1]["rel"]
+        ance2[ance2.index(common[0]) - 1]["rel"]
         if len(common) and ance2.index(common[0]) > 0 else "null")
     common_dep22_rel = (
-        ance2[ance2.index(common[0])-2]["rel"]
+        ance2[ance2.index(common[0]) - 2]["rel"]
         if len(common) and ance2.index(common[0]) > 1 else "null")
     common_dep23_rel = (
-        ance2[ance2.index(common[0])-3]["rel"]
+        ance2[ance2.index(common[0]) - 3]["rel"]
         if len(common) and ance2.index(common[0]) > 2 else "null")
 
     # Common ancestor son's tag for each entity's branch
     common_dep11_tag = (
-        ance1[ance1.index(common[0])-1]["tag"]
+        dict_tags[ance1[ance1.index(common[0]) - 1]["tag"]]
         if len(common) and ance1.index(common[0]) > 0 else "null")
+
     common_dep22_tag = (
-        ance2[ance2.index(common[0])-2]["tag"]
+        dict_tags[ance2[ance2.index(common[0]) - 2]["tag"]]
         if len(common) and ance2.index(common[0]) > 1 else "null")
 
     # Tree address features
@@ -335,9 +375,9 @@ def extract_features(analysis, entities, e1, e2):
     # Jackard dist and Edit dist
     try:
         jaccard_dist = round(jaccard_distance(set(n1["lemma"]),
-                             set(n2["lemma"]))*10, 0)
+                                              set(n2["lemma"])) * 10, 0)
         edit_dist = edit_distance(n1["lemma"], n2["lemma"])
-        edit_dist = round(edit_dist*10 / (1+edit_dist), 0)
+        edit_dist = round(edit_dist * 10 / (1 + edit_dist), 0)
 
     except Exception:
         jaccard_dist = 10
@@ -345,11 +385,16 @@ def extract_features(analysis, entities, e1, e2):
     # Entity lemma features
     lemma1 = str(n1["lemma"])
     lemma2 = str(n2["lemma"])
+    # 2-Prefix/Suffix from lemma
+    pre2_1 = lemma1[:2].lower()
+    pre2_2 = lemma2[:2].lower()
+    suf2_1 = lemma1[-2:].lower()
+    suf2_2 = lemma2[-2:].lower()
     # 3-Prefix/Suffix from lemma
-    pre1 = lemma1[:3]
-    pre2 = lemma2[:3]
-    suf1 = lemma1[-3:]
-    suf2 = lemma2[-3:]
+    pre3_1 = lemma1[:3].lower()
+    pre3_2 = lemma2[:3].lower()
+    suf3_1 = lemma1[-3:].lower()
+    suf3_2 = lemma2[-3:].lower()
     # Number of capitals in token
     capitals2 = sum(i.isupper() for i in lemma2)
 
@@ -361,11 +406,17 @@ def extract_features(analysis, entities, e1, e2):
         effect_present,
         int_present,
         mechanism_present,  # 10
+        advise_v1,
+        effect_v1,
+        int_v1,
+        mechanism_v1,
+        advise_v2,  # 15
+        effect_v2,
         int_v2,
         mechanism_v2,
         v1_equal_v2,
-        v1_lemma,
-        v2_lemma,  # 15
+        # v1_lemma,
+        # v2_lemma,  # 15
         e1_rel,
         e2_rel,
         v1_rel,
@@ -393,15 +444,19 @@ def extract_features(analysis, entities, e1, e2):
         v2_deps,  # 40
         ance1_deps,
         ance2_deps,
-        e1_conj_dobj_nmod_e2,
-        jaccard_dist,
-        edit_dist,  # 45
-        pre1,
-        pre2,
-        suf1,
-        suf2,
-        capitals2,  # 50
-        ]
+        # e1_conj_dobj_nmod_e2,
+        # jaccard_dist,
+        # edit_dist,  # 45
+        # pre2_1,
+        # pre2_2,
+        # suf2_1,
+        # suf2_2,
+        pre3_1,
+        pre3_2,
+        suf3_1,
+        suf3_2,
+        #capitals2,  # 50
+    ]
     # Turn variables f to categorical var_i=f
     feats = [f"var_{i}={f}" for i, f in enumerate(feats)]
     return feats
@@ -489,7 +544,6 @@ def build_features(inputdir, outputfile):
             stext = s.attributes["text"].value
             if not stext:  # Do not process if sentence is empty
                 continue
-
             # load sentence entities into a dictionary
             entities = {}
             ents = s.getElementsByTagName("entity")
@@ -592,7 +646,37 @@ def learner(model, feature_input, output_fn):
         # Save model to pickle
         with open(f"{output_fn}.GBC", "wb") as fp:
             pickle.dump([model, encoder], fp)
-
+    elif model == "LR":
+        _, x_cat, y = get_features_labels(feature_input)
+        # OneHotEncode variables
+        encoder = OneHotEncoder(handle_unknown="ignore")
+        encoder.fit(x_cat)
+        x = encoder.transform(x_cat)
+        # Create LR instance
+        model = LR(C=1e6,
+                   multi_class='ovr',
+                   penalty='l2',
+                   max_iter=1000,
+                   random_state=random_seed,
+                   solver='lbfgs')
+        # Train RF instance
+        model.fit(x, y)
+        # Save model to pickle
+        with open(f"{output_fn}.LR", "wb") as fp:
+            pickle.dump([model, encoder], fp)
+    elif model == "KNC":
+        _, x_cat, y = get_features_labels(feature_input)
+        # OneHotEncode variables
+        encoder = OneHotEncoder(handle_unknown="ignore")
+        encoder.fit(x_cat)
+        x = encoder.transform(x_cat)
+        # Create KNC instance
+        model = KNC()
+        # Train KNC instance
+        model.fit(x, y)
+        # Save model to pickle
+        with open(f"{output_fn}.KNC", "wb") as fp:
+            pickle.dump([model, encoder], fp)
     else:
         print(f"[ERROR] Model {model} not implemented")
         raise NotImplementedError
@@ -652,6 +736,25 @@ def classifier(model, feature_input, model_input, outputfile):
         x_ = encoder.transform(x)
         # Predict classes
         predictions = model.predict(x_)
+
+    elif model == "LR":
+        # Retrieve model
+        with open(f"{model_input}.LR", "rb") as fp:
+            model, encoder = pickle.load(fp)
+        # OneHotEncode variables
+        x_ = encoder.transform(x)
+        # Predict classes
+        predictions = model.predict(x_)
+
+    elif model == "KNC":
+        # Retrieve model
+        with open(f"{model_input}.KNC", "rb") as fp:
+            model, encoder = pickle.load(fp)
+        # OneHotEncode variables
+        x_ = encoder.transform(x)
+        # Predict classes
+        predictions = model.predict(x_)
+
     else:
         print(f"[ERROR] Model {model} not implemented")
         raise NotImplementedError
@@ -662,7 +765,7 @@ def classifier(model, feature_input, model_input, outputfile):
             output_ddi(id, id_e1, id_e2, type, outf)
 
 
-def evaluate(inputdir, outputfile):
+def evaluate(inputdir, outputfile, round = ''):
     """
     Evaluate results of DDI model.
     Receives a data directory and the filename for the results to evaluate.
@@ -676,6 +779,7 @@ def evaluate(inputdir, outputfile):
     Returns:
         - Jar return object.
     """
+
     return system(f"java -jar eval/evaluateDDI.jar {inputdir} {outputfile}")
 
 
@@ -690,15 +794,16 @@ def main(model, train_input_fn, valid_input_fn, train_features_fn,
         - outputfile: string with file name to save output to.
     """
     # Run train_features
-    # build_features(train_input_fn, train_features_fn)
+    #build_features(train_input_fn, train_features_fn)
     # Train model
     learner(model, train_features_fn, ml_model_fn)
     # Run validation features
-    # build_features(valid_input_fn, valid_features_fn)
+    #build_features(valid_input_fn, valid_features_fn)
     # Predict validation
     classifier(model, valid_features_fn, ml_model_fn, outputfile)
     # Evaluate prediction
     evaluate(valid_input_fn, outputfile)
+
 
 
 if __name__ == "__main__":
