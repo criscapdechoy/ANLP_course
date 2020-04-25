@@ -20,7 +20,7 @@ from xml.dom.minidom import parse
 import pickle
 
 # Reference constants
-MODELS = ["MaxEnt", "MLP", "SVC", "GBC"]
+MODELS = ["MaxEnt", "MLP", "SVC", "GBC", "LR"]
 
 # Global variables and procedures
 tmp_path = "data/tmp"
@@ -31,7 +31,6 @@ if not path.exists(tmp_path):  # Create dir if not exists
 # model = "MLP"
 # model = "SVC"
 # model = "GBC"
-# model = "LR"
 model = "LR"
 
 print(model)
@@ -75,7 +74,7 @@ dict_tags = {'JJ': 'JJ', 'JJR': 'JJ', 'JJS': 'JJ',
              'WP': 'WP', 'WP$': 'WP',
              'CC': 'CC', 'CD': 'CF', 'DT': 'DT', 'EX': 'EX', 'FW': 'FW', 'IN': 'IN', 'LS': 'LS', 'MD': 'MD',
              'PDT': 'DT', 'POS': 'POS',
-             'PRP': 'PRP', 'PRP': 'PRP$', 'RP': 'RP', 'SYS': 'SYS', 'TO': 'TO', 'UH': 'UH', 'WDT': 'DT', 'WRB': 'WRB',
+             'RP': 'RP', 'SYS': 'SYS', 'TO': 'TO', 'UH': 'UH', 'WDT': 'DT', 'WRB': 'WRB',
              'SYM':'SYM','-LRB-': '-LRB-', ',': ',',':':':', 'null': 'null'}
 
 # Get CoreNLP instance, which need to be running in http://localhost:9000
@@ -455,7 +454,7 @@ def extract_features(analysis, entities, e1, e2):
         pre3_2,
         suf3_1,
         suf3_2,
-        #capitals2,  # 50
+        #capitals2,
     ]
     # Turn variables f to categorical var_i=f
     feats = [f"var_{i}={f}" for i, f in enumerate(feats)]
@@ -794,16 +793,15 @@ def main(model, train_input_fn, valid_input_fn, train_features_fn,
         - outputfile: string with file name to save output to.
     """
     # Run train_features
-    #build_features(train_input_fn, train_features_fn)
+    build_features(train_input_fn, train_features_fn)
     # Train model
     learner(model, train_features_fn, ml_model_fn)
     # Run validation features
-    #build_features(valid_input_fn, valid_features_fn)
+    build_features(valid_input_fn, valid_features_fn)
     # Predict validation
     classifier(model, valid_features_fn, ml_model_fn, outputfile)
     # Evaluate prediction
     evaluate(valid_input_fn, outputfile)
-
 
 
 if __name__ == "__main__":
