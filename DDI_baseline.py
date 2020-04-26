@@ -9,7 +9,7 @@ from os import listdir, system, path, makedirs
 from sys import exit
 from xml.dom.minidom import parse
 # Global variables and procedures
-input_default_path = "data/Devel"
+input_default_path = "data/Test-DDI"
 tmp_path = "data/tmp"
 if not path.exists(tmp_path):  # Create dir if not exists
     makedirs(tmp_path)
@@ -177,7 +177,6 @@ def check_interaction(analysis, entitities, e1, e2):
         is_ddi = True
         ddi_type = "int"
 
-    # TODO: implement function
     return "1" if is_ddi else "0", ddi_type
 
 

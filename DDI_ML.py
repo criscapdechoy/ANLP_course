@@ -4,13 +4,12 @@ Python scripts that contains functions to train and evaluate a ML model to
 detect Drug-Drug Interaction.
 """
 # !/usr/bin/python3
-from nltk import jaccard_distance, edit_distance
+# from nltk import jaccard_distance, edit_distance
 from nltk.parse.corenlp import CoreNLPDependencyParser
 from os import listdir, system, path, makedirs
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import OneHotEncoder
-from sklearn import preprocessing
 from sklearn.linear_model import LogisticRegression as LR
 from sklearn.neighbors import KNeighborsClassifier as KNC
 from sklearn.svm import SVC
@@ -27,13 +26,11 @@ tmp_path = "data/tmp"
 if not path.exists(tmp_path):  # Create dir if not exists
     makedirs(tmp_path)
     print(f"[INFO] Created a new folder {tmp_path}")
-# model = "MaxEnt"
-model = "MLP"
+model = "MaxEnt"
+# model = "MLP"
 # model = "SVC"
 # model = "GBC"
 # model = "LR"
-
-print(model)
 
 train_input_fn = "data/Train"
 valid_input_fn = "data/Devel"
@@ -41,7 +38,7 @@ valid_input_fn = "data/Devel"
 train_features_fn = f"{tmp_path}/DDI_ML_train_features.txt"
 valid_features_fn = f"{tmp_path}/DDI_ML_valid_features.txt"
 # valid_features_fn = f"{tmp_path}/DDI_ML_test_features.txt"
-outputfile = f"{tmp_path}/task9.2_ML{model}.txt"
+outputfile = f"{tmp_path}/task9.2_ML_{model}_1.txt"
 
 # Model path to save it
 ml_model_fn = f"{tmp_path}/DDI_ML_model"
@@ -51,31 +48,47 @@ megam = "resources/megam_i686.opt"
 random_seed = 10
 # MaxEnt params
 feat_col = "4-"  # 0.3777
-feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76,84,85"  # 0.3901
-
+feat_col = "4-10,12,16-46,48"  # 0.3777
+# feat_col = "4-10,17-27,32,34-46,49,53,58,61-65,76,84,85"  # 0.3901
 # MLP params
 hidden_layer_sizes = (45,)
-print(f"Size of hidden layer: {hidden_layer_sizes}") if model == "MLP" else print('')
 alpha = 1
 activation = "relu"
 solver = "adam"
 n_epochs = 100
-early_stopping = True
+early_stopping = False
 verbose = False
+# SVC
+svc_C = 20
+kernel = "rbf"
+gamma = "scale"
 # GBC params
 n_estimators = 50
+# LR params
+C = 1e6
+multi_class = 'ovr'
+penalty = 'l2'
+max_iter = 1000
+lr_solver = 'lbfgs'
+n_jobs = -1
+lr_verbose = 0
 
 # Dict global tags
-dict_tags = {'JJ': 'JJ', 'JJR': 'JJ', 'JJS': 'JJ',
-             'NN': 'NN', 'NNS': 'NN', 'NNP': 'NN', 'NNPS': 'NN',
-             'PRP': 'PRP', 'PRP$': 'PRP',
-             'RB': 'RB', 'RBS': 'RB', 'RBR': 'RB',
-             'VB': 'VB', 'VBD': 'VB', 'VBG': 'VB', 'VBN': 'VB', 'VBP': 'VB', 'VBZ': 'VB',
-             'WP': 'WP', 'WP$': 'WP',
-             'CC': 'CC', 'CD': 'CF', 'DT': 'DT', 'EX': 'EX', 'FW': 'FW', 'IN': 'IN', 'LS': 'LS', 'MD': 'MD',
-             'PDT': 'DT', 'POS': 'POS',
-             'RP': 'RP', 'SYS': 'SYS', 'TO': 'TO', 'UH': 'UH', 'WDT': 'DT', 'WRB': 'WRB',
-             'SYM':'SYM','-LRB-': '-LRB-', ',': ',',':':':', 'null': 'null'}
+dict_tags = {
+    'JJ': 'JJ', 'JJR': 'JJ', 'JJS': 'JJ',
+    'NN': 'NN', 'NNS': 'NN', 'NNP': 'NN', 'NNPS': 'NN',
+    'PRP': 'PRP', 'PRP$': 'PRP',
+    'RB': 'RB', 'RBS': 'RB', 'RBR': 'RB',
+    'VB': 'VB', 'VBD': 'VB', 'VBG': 'VB', 'VBN': 'VB', 'VBP': 'VB',
+    'VBZ': 'VB',
+    'WP': 'WP', 'WP$': 'WP',
+    'CC': 'CC', 'CD': 'CF', 'DT': 'DT', 'EX': 'EX', 'FW': 'FW', 'IN': 'IN',
+    'LS': 'LS', 'MD': 'MD',
+    'PDT': 'DT', 'POS': 'POS',
+    'RP': 'RP', 'SYS': 'SYS', 'TO': 'TO', 'UH': 'UH', 'WDT': 'DT',
+    'WRB': 'WRB',
+    'SYM': 'SYM', '-LRB-': '-LRB-', ',': ',', ':': ':', 'null': 'null'
+}
 
 # Get CoreNLP instance, which need to be running in http://localhost:9000
 DependencyParser = CoreNLPDependencyParser(url="http://localhost:9000")
@@ -265,8 +278,9 @@ def extract_features(analysis, entities, e1, e2):
     mechanism_lemmas = ["increase", "decrease", "result", "report", "expect",
                         "reduce", "inhibit", "show", "interfere", "cause",
                         "indicate", "demonstrate"]
-    #advise_lemmas = ["should", "must", "may", "recommend", "caution"]
-    #effect_lemmas = ["produce", "administer", "potentiate", "prevent", "effect"]
+    # advise_lemmas = ["should", "must", "may", "recommend", "caution"]
+    # effect_lemmas = [
+    # "produce", "administer", "potentiate", "prevent", "effect"]
     int_lemmas = ["interact", "interaction"]
     mechanism_lemmas = ["reduce", "increase", "decrease"]
     # Mix lemmas
@@ -295,10 +309,9 @@ def extract_features(analysis, entities, e1, e2):
     int_v2 = True if v2["lemma"] in int_lemmas else "null"
     mechanism_v2 = True if v2["lemma"] in mechanism_lemmas else "null"
 
-
     # Check if entities hang from the same verb
-    v1_lemma = v1["lemma"]
-    v2_lemma = v2["lemma"]
+    # v1_lemma = v1["lemma"]
+    # v2_lemma = v2["lemma"]
     v1_equal_v2 = v1 == v2
 
     # Get head dependencies
@@ -362,40 +375,39 @@ def extract_features(analysis, entities, e1, e2):
         dict_tags[ance2[ance2.index(common[0]) - 2]["tag"]]
         if len(common) and ance2.index(common[0]) > 1 else "null")
 
-    # Tree address features
-    # e1<-conj-x<-dobj-VB-nmod->e2
-    e2_nmod = get_dependency_address(v2, "nmod") == n2["address"]
-    x_dobj = get_dependency_address(v1, "dobj")
-    nx = analysis.nodes[x_dobj] if x_dobj != -1 else v1
-    e1_conj_dobj = get_dependency_address(nx, "conj") == n1["address"]
-    e1_conj_dobj_nmod_e2 = e1_conj_dobj and e2_nmod
+    # # Tree address features
+    # # e1<-conj-x<-dobj-VB-nmod->e2
+    # e2_nmod = get_dependency_address(v2, "nmod") == n2["address"]
+    # x_dobj = get_dependency_address(v1, "dobj")
+    # nx = analysis.nodes[x_dobj] if x_dobj != -1 else v1
+    # e1_conj_dobj = get_dependency_address(nx, "conj") == n1["address"]
+    # e1_conj_dobj_nmod_e2 = e1_conj_dobj and e2_nmod
 
     # NER features
-    # Jackard dist and Edit dist
-    try:
-        jaccard_dist = round(jaccard_distance(set(n1["lemma"]),
-                                              set(n2["lemma"])) * 10, 0)
-        edit_dist = edit_distance(n1["lemma"], n2["lemma"])
-        edit_dist = round(edit_dist * 10 / (1 + edit_dist), 0)
-
-    except Exception:
-        jaccard_dist = 10
-        edit_dist = 10
+    # # Jackard dist and Edit dist
+    # try:
+    #     jaccard_dist = round(jaccard_distance(set(n1["lemma"]),
+    #                                           set(n2["lemma"])) * 10, 0)
+    #     edit_dist = edit_distance(n1["lemma"], n2["lemma"])
+    #     edit_dist = round(edit_dist * 10 / (1 + edit_dist), 0)
+    # except Exception:
+    #     jaccard_dist = 10
+    #     edit_dist = 10
     # Entity lemma features
     lemma1 = str(n1["lemma"])
     lemma2 = str(n2["lemma"])
-    # 2-Prefix/Suffix from lemma
-    pre2_1 = lemma1[:2].lower()
-    pre2_2 = lemma2[:2].lower()
-    suf2_1 = lemma1[-2:].lower()
-    suf2_2 = lemma2[-2:].lower()
+    # # 2-Prefix/Suffix from lemma
+    # pre2_1 = lemma1[:2].lower()
+    # pre2_2 = lemma2[:2].lower()
+    # suf2_1 = lemma1[-2:].lower()
+    # suf2_2 = lemma2[-2:].lower()
     # 3-Prefix/Suffix from lemma
     pre3_1 = lemma1[:3].lower()
     pre3_2 = lemma2[:3].lower()
     suf3_1 = lemma1[-3:].lower()
     suf3_2 = lemma2[-3:].lower()
-    # Number of capitals in token
-    capitals2 = sum(i.isupper() for i in lemma2)
+    # # Number of capitals in token
+    # capitals2 = sum(i.isupper() for i in lemma2)
 
     # Gather variables
     feats = [
@@ -590,8 +602,6 @@ def learner(model, feature_input, output_fn):
         megam_model = f"{output_fn}.megam"
         system(f"cat {feature_input}  | cut -f {feat_col} > \
             {megam_features}")
-        # system(f"cat {feature_input}  | cut -f4- > \
-        #     {megam_features}")
         system(f"./{megam} -quiet -nc -nobias multiclass \
             {megam_features} > {megam_model}")
 
@@ -623,12 +633,18 @@ def learner(model, feature_input, output_fn):
         encoder.fit(x_cat)
         x = encoder.transform(x_cat)
         # Create RF instance
-        model = SVC(random_state=random_seed)
+        model = SVC(
+                C=svc_C,
+                kernel=kernel,
+                gamma=gamma,
+                random_state=random_seed
+            )
         # Train RF instance
         model.fit(x, y)
         # Save model to pickle
         with open(f"{output_fn}.SVC", "wb") as fp:
             pickle.dump([model, encoder], fp)
+
     elif model == "GBC":
         _, x_cat, y = get_features_labels(feature_input)
         # OneHotEncode variables
@@ -644,6 +660,7 @@ def learner(model, feature_input, output_fn):
         # Save model to pickle
         with open(f"{output_fn}.GBC", "wb") as fp:
             pickle.dump([model, encoder], fp)
+
     elif model == "LR":
         _, x_cat, y = get_features_labels(feature_input)
         # OneHotEncode variables
@@ -651,17 +668,21 @@ def learner(model, feature_input, output_fn):
         encoder.fit(x_cat)
         x = encoder.transform(x_cat)
         # Create LR instance
-        model = LR(C=1e6,
-                   multi_class='ovr',
-                   penalty='l2',
-                   max_iter=1000,
-                   random_state=random_seed,
-                   solver='lbfgs',verbose=1)
+        model = LR(
+            C=C,
+            multi_class=multi_class,
+            penalty=penalty,
+            max_iter=max_iter,
+            solver=lr_solver,
+            random_state=random_seed,
+            n_jobs=n_jobs,
+            verbose=lr_verbose)
         # Train RF instance
         model.fit(x, y)
         # Save model to pickle
         with open(f"{output_fn}.LR", "wb") as fp:
             pickle.dump([model, encoder], fp)
+
     elif model == "KNC":
         _, x_cat, y = get_features_labels(feature_input)
         # OneHotEncode variables
@@ -675,6 +696,7 @@ def learner(model, feature_input, output_fn):
         # Save model to pickle
         with open(f"{output_fn}.KNC", "wb") as fp:
             pickle.dump([model, encoder], fp)
+
     else:
         print(f"[ERROR] Model {model} not implemented")
         raise NotImplementedError
@@ -763,7 +785,7 @@ def classifier(model, feature_input, model_input, outputfile):
             output_ddi(id, id_e1, id_e2, type, outf)
 
 
-def evaluate(inputdir, outputfile, round = ''):
+def evaluate(inputdir, outputfile):
     """
     Evaluate results of DDI model.
     Receives a data directory and the filename for the results to evaluate.
