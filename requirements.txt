@@ -4,7 +4,7 @@ entrypoints==0.3
 flake8==3.7.9
 graphviz==0.13.2
 idna==2.9
-joblib==0.14.1
+joblib==1.2.0
 mccabe==0.6.1
 nltk==3.4.5
 numpy==1.18.2
